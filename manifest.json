@@ -1,0 +1,9 @@
+{
+  "id": "habit-tracker",
+  "name": "The Best Habit Tracker",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Click-to-toggle habit heatmap with streaks and totals, embeddable via a habit-tracker code block.",
+  "author": "Evan Gooch",
+  "isDesktopOnly": false
+}

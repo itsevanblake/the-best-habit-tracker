@@ -1,0 +1,417 @@
+/* Break the tracker out of Obsidian's "Readable Line Length" column so it
+   can use the full width of the pane, not just the constrained text
+   column. Only affects notes that actually contain this block. */
+.markdown-preview-sizer:has(.habit-tracker-root),
+.markdown-source-view.mod-cm6 .cm-sizer:has(.habit-tracker-root) {
+	max-width: none !important;
+}
+
+/* Also reclaim the standard left/right note padding (independent of
+   Readable Line Length) so the block spans the true edge-to-edge width of
+   the pane, not just the width inside that padding. --file-margins is
+   Obsidian's own variable for this padding; the fallback keeps this a
+   no-op if a given theme/version doesn't define it. */
+.habit-tracker-root {
+	margin: 1.2em calc(-1 * var(--file-margins, 0px));
+	padding: 0 12px;
+	font-variant-numeric: tabular-nums;
+	font-size: 1.1em;
+}
+
+.habit-tracker-empty {
+	color: var(--text-muted);
+	font-style: italic;
+	padding: 1.5em 0;
+	text-align: center;
+}
+
+.habit-tracker-list {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+/* ---- Global Week/Year toggle ---- */
+
+.habit-tracker-global-toggle-row {
+	display: flex;
+	justify-content: flex-end;
+	margin-bottom: 10px;
+}
+
+.habit-tracker-view-toggle {
+	display: flex;
+	background-color: var(--background-secondary);
+	border-radius: 8px;
+	padding: 3px;
+	gap: 2px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.habit-tracker-view-btn {
+	font-size: 0.78em;
+	font-weight: 500;
+	padding: 4px 12px;
+	cursor: pointer;
+	background: transparent;
+	border: none;
+	border-radius: 6px;
+	color: var(--text-muted);
+	box-shadow: none;
+	transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.habit-tracker-view-btn:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.habit-tracker-view-btn-active,
+.habit-tracker-view-btn-active:hover {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+/* ---- Habit card ---- */
+
+.habit-tracker-habit {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	padding: 20px 22px 22px;
+	background-color: var(--background-primary-alt, var(--background-secondary));
+	border-left: 4px solid var(--habit-color, var(--interactive-accent));
+	transition: box-shadow 0.15s ease;
+}
+
+.habit-tracker-habit:hover {
+	box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+}
+
+.habit-tracker-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.habit-tracker-title-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.habit-tracker-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.habit-tracker-name {
+	font-weight: 600;
+	font-size: 1.1em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.habit-tracker-stats-row {
+	display: flex;
+	gap: 6px;
+	flex-shrink: 0;
+}
+
+.habit-tracker-pill {
+	display: flex;
+	align-items: baseline;
+	gap: 4px;
+	padding: 5px 12px;
+	border-radius: 999px;
+	background-color: var(--background-secondary);
+	font-size: 0.8em;
+}
+
+.habit-tracker-pill-streak {
+	background-color: color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 16%, var(--background-secondary));
+}
+
+.habit-tracker-pill-icon {
+	font-size: 0.9em;
+}
+
+.habit-tracker-pill-value {
+	font-weight: 700;
+	color: var(--text-normal);
+}
+
+.habit-tracker-pill-label {
+	color: var(--text-muted);
+}
+
+.habit-tracker-edit-btn,
+.habit-tracker-delete-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border-radius: 999px;
+	cursor: pointer;
+	opacity: 0.55;
+	font-size: 0.85em;
+	transition: opacity 0.12s ease, background-color 0.12s ease;
+}
+
+.habit-tracker-edit-btn:hover {
+	opacity: 1;
+	background-color: var(--background-secondary);
+}
+
+.habit-tracker-delete-btn:hover {
+	opacity: 1;
+	background-color: var(--background-modifier-error, var(--background-secondary));
+}
+
+/* ---- Year (heatmap) grid ---- */
+
+.habit-tracker-grid-wrap {
+	/* overflow-x:auto is safe here now — hover no longer scales cells
+	   (see .habit-tracker-cell:hover below), so nothing can visually
+	   exceed this box's bounds and get clipped by the auto-on-both-axes
+	   quirk that bit us before. Cells need a real minimum pixel size to
+	   fit their day-number text, so horizontal scroll is the fallback on
+	   panes narrower than that minimum. */
+	overflow-x: auto;
+	padding: 6px;
+}
+
+.habit-tracker-months {
+	display: grid;
+	grid-template-columns: repeat(53, 1fr);
+	font-size: 0.68em;
+	color: var(--text-faint);
+	margin-bottom: 3px;
+	min-width: 1300px;
+}
+
+.habit-tracker-grid {
+	display: grid;
+	grid-auto-flow: column;
+	grid-template-rows: repeat(7, 1fr);
+	gap: 3px;
+	min-width: 1300px;
+}
+
+.habit-tracker-cell {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	aspect-ratio: 1 / 1;
+	border-radius: 4px;
+	background-color: var(--background-modifier-border);
+	cursor: pointer;
+	transition: outline-color 0.08s ease, background-color 0.08s ease;
+}
+
+.habit-tracker-cell-daynum {
+	font-size: 0.72em;
+	line-height: 1;
+	color: var(--text-muted);
+	pointer-events: none;
+	user-select: none;
+}
+
+.habit-tracker-cell-done .habit-tracker-cell-daynum {
+	color: var(--text-on-accent);
+}
+
+.habit-tracker-cell:hover {
+	outline: 2px solid var(--text-muted);
+	filter: brightness(1.15);
+}
+
+.habit-tracker-cell-today {
+	outline: 2px solid var(--habit-color, var(--text-accent));
+}
+
+.habit-tracker-cell-future {
+	background-color: transparent;
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+	cursor: pointer;
+}
+
+.habit-tracker-cell-blank {
+	background-color: transparent;
+	cursor: default;
+	pointer-events: none;
+}
+
+/* ---- Week grid ---- */
+
+.habit-tracker-week-grid {
+	display: flex;
+	gap: 8px;
+	padding: 2px 0;
+}
+
+.habit-tracker-week-cell {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	flex: 1;
+	aspect-ratio: 1 / 1;
+	max-width: 76px;
+	border-radius: 10px;
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	transition: transform 0.08s ease-in-out, background-color 0.1s ease;
+}
+
+.habit-tracker-week-cell:hover {
+	border-color: var(--habit-color, var(--text-accent));
+	box-shadow: 0 0 0 2px var(--habit-color, var(--text-accent));
+}
+
+.habit-tracker-week-day-label {
+	font-size: 0.75em;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.habit-tracker-week-date-label {
+	font-size: 1.35em;
+	font-weight: 700;
+}
+
+.habit-tracker-week-cell-done {
+	border-color: transparent;
+}
+
+.habit-tracker-week-cell-done .habit-tracker-week-day-label,
+.habit-tracker-week-cell-done .habit-tracker-week-date-label {
+	color: var(--text-on-accent);
+}
+
+.habit-tracker-week-cell-future {
+	background-color: transparent;
+	border-style: dashed;
+	cursor: pointer;
+}
+
+.habit-tracker-week-cell-future:hover {
+	border-color: var(--habit-color, var(--text-accent));
+}
+
+.habit-tracker-week-cell.habit-tracker-cell-blank {
+	background-color: transparent;
+	border-style: none;
+	box-shadow: none;
+	cursor: default;
+	pointer-events: none;
+}
+
+/* ---- Month grid ---- */
+
+.habit-tracker-month-title {
+	font-weight: 600;
+	font-size: 0.95em;
+	margin-bottom: 8px;
+	color: var(--text-muted);
+}
+
+.habit-tracker-month-weekday-header {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	font-size: 0.72em;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	text-align: center;
+	margin-bottom: 6px;
+}
+
+.habit-tracker-month-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 6px;
+}
+
+.habit-tracker-month-grid .habit-tracker-week-cell {
+	max-width: none;
+}
+
+/* ---- Add habit card ---- */
+
+.habit-tracker-add-card {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 12px;
+	border: 1.5px dashed var(--background-modifier-border);
+	border-radius: 10px;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+}
+
+.habit-tracker-add-card:hover {
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+.habit-tracker-add-icon {
+	font-size: 1.1em;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.habit-tracker-add-label {
+	font-size: 0.88em;
+	font-weight: 500;
+}
+
+/* ---- Add habit modal ---- */
+
+.habit-tracker-modal h3 {
+	margin-top: 0;
+}
+
+.habit-tracker-swatch-row {
+	display: flex;
+	gap: 10px;
+	padding: 4px 0 8px;
+}
+
+.habit-tracker-swatch {
+	width: 26px;
+	height: 26px;
+	border-radius: 50%;
+	cursor: pointer;
+	outline: 2px solid transparent;
+	outline-offset: 2px;
+	transition: outline-color 0.1s ease, transform 0.1s ease;
+}
+
+.habit-tracker-swatch:hover {
+	transform: scale(1.1);
+}
+
+.habit-tracker-swatch-selected {
+	outline-color: var(--text-normal);
+}
+
+.habit-tracker-modal-footer {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 12px;
+}
