@@ -151,6 +151,40 @@
 	color: var(--text-muted);
 }
 
+.habit-tracker-type-badge {
+	font-size: 0.65em;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background-color: var(--background-modifier-error, var(--text-error));
+	color: var(--text-on-accent);
+	margin-left: 2px;
+}
+
+.habit-tracker-identity {
+	font-size: 0.85em;
+	font-style: italic;
+	color: var(--text-muted);
+	margin-bottom: 6px;
+}
+
+.habit-tracker-meta-line {
+	font-size: 0.78em;
+	color: var(--text-faint);
+	margin-bottom: 4px;
+}
+
+.habit-tracker-goal-link {
+	cursor: pointer;
+	color: var(--text-accent);
+	width: fit-content;
+}
+
+.habit-tracker-goal-link:hover {
+	text-decoration: underline;
+}
+
 .habit-tracker-edit-btn,
 .habit-tracker-delete-btn {
 	display: flex;
@@ -250,6 +284,13 @@
 	pointer-events: none;
 }
 
+/* Minimum/2-minute-rule version of a day — same color as a full
+   completion but visibly lighter, so the distinction between "showed up
+   minimally" and "did the full habit" stays legible at a glance. */
+.habit-tracker-cell-min {
+	opacity: 0.5;
+}
+
 /* ---- Week grid ---- */
 
 .habit-tracker-week-grid {
@@ -298,6 +339,10 @@
 .habit-tracker-week-cell-done .habit-tracker-week-day-label,
 .habit-tracker-week-cell-done .habit-tracker-week-date-label {
 	color: var(--text-on-accent);
+}
+
+.habit-tracker-week-cell-min {
+	opacity: 0.6;
 }
 
 .habit-tracker-week-cell-future {
@@ -384,6 +429,15 @@
 
 .habit-tracker-modal h3 {
 	margin-top: 0;
+}
+
+.habit-tracker-modal h4 {
+	margin-top: 18px;
+	margin-bottom: 4px;
+	color: var(--text-muted);
+	font-size: 0.85em;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
 }
 
 .habit-tracker-swatch-row {

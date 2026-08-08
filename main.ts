@@ -1,16 +1,29 @@
 import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice, Platform } from "obsidian";
 import { createClient, SupabaseClient, Session, RealtimeChannel } from "@supabase/supabase-js";
 
+type HabitType = "build" | "break";
+
 interface HabitDefinition {
 	id: string;
 	name: string;
 	color: string;
 	createdAt: string; // YYYY-MM-DD
+	type?: HabitType; // default "build" — a "break" habit inverts the framing (Clear's four laws apply in reverse to quitting a habit), not the click mechanic: a checked day still means "I succeeded today" (i.e. "I resisted").
+	identity?: string; // "I am someone who..." — Clear's identity-based habits: the vote this habit casts for who you're becoming.
+	stackedAfter?: string; // Law 1 (Make it Obvious): habit stacking anchor, "After I ___, I will do this."
+	whenWhere?: string; // Law 1: implementation intention, "I will do this at [time] in [location]."
+	minimumVersion?: string; // Law 3 (Make it Easy): the 2-minute-rule fallback version for a low-friction day.
+	linkedGoal?: string; // Note name of the Goals/Quarters file this habit is the "system" for.
 }
+
+// A day can be a full completion (true) or the minimum/2-minute-rule
+// version (Law 3) — both count toward streaks ("showing up" is what
+// matters), but render differently so the distinction stays visible.
+type EntryValue = true | "min";
 
 interface PluginData {
 	habits: HabitDefinition[];
-	entries: Record<string, Record<string, boolean>>; // habitId -> "YYYY-MM-DD" -> done
+	entries: Record<string, Record<string, EntryValue>>; // habitId -> "YYYY-MM-DD" -> value
 }
 
 const DEFAULT_DATA: PluginData = { habits: [], entries: {} };
@@ -54,11 +67,12 @@ function slugify(name: string): string {
 
 interface Stats {
 	streak: number;
+	bestStreak: number;
 	total: number;
 	totalThisYear: number;
 }
 
-function computeStats(entries: Record<string, boolean>): Stats {
+function computeStats(entries: Record<string, EntryValue>): Stats {
 	let total = 0;
 	let totalThisYear = 0;
 	const currentYear = "" + new Date().getFullYear();
@@ -89,27 +103,80 @@ function computeStats(entries: Record<string, boolean>): Stats {
 		cursor = addDays(cursor, -1);
 	}
 
-	return { streak, total, totalThisYear };
+	return { streak, bestStreak: computeBestStreak(entries), total, totalThisYear };
+}
+
+// Longest streak ever achieved (same forgiving one-gap rule as the current
+// streak), scanning forward through history rather than backward from
+// today. Surfacing this alongside the current streak matters because
+// Clear's "don't break the chain" framing is about the record you're
+// building, not just today's status.
+function computeBestStreak(entries: Record<string, EntryValue>): number {
+	const doneDates = Object.keys(entries)
+		.filter((d) => entries[d])
+		.sort();
+	if (doneDates.length === 0) return 0;
+
+	let best = 1;
+	let current = 1;
+	for (let i = 1; i < doneDates.length; i++) {
+		const prev = new Date(doneDates[i - 1]);
+		const cur = new Date(doneDates[i]);
+		const diffDays = Math.round((cur.getTime() - prev.getTime()) / 86400000);
+		if (diffDays === 1 || diffDays === 2) {
+			current++;
+		} else {
+			current = 1;
+		}
+		best = Math.max(best, current);
+	}
+	return best;
+}
+
+// Cycles a day's state: empty -> full -> minimum version -> empty. Both
+// "full" and "min" count as success for streak purposes (Law 4: showing up
+// is what earns the reward), they just render differently.
+function nextEntryValue(current: EntryValue | undefined): EntryValue | undefined {
+	if (current === undefined) return true;
+	if (current === true) return "min";
+	return undefined;
+}
+
+interface HabitFormValues {
+	name: string;
+	color: string;
+	type: HabitType;
+	identity: string;
+	stackedAfter: string;
+	whenWhere: string;
+	minimumVersion: string;
+	linkedGoal: string;
 }
 
 interface HabitFormOptions {
 	title: string;
 	submitLabel: string;
-	initialName?: string;
-	initialColor?: string;
-	onSubmit: (name: string, color: string) => void;
+	initial?: Partial<HabitFormValues>;
+	onSubmit: (values: HabitFormValues) => void;
 }
 
 class HabitFormModal extends Modal {
 	opts: HabitFormOptions;
-	name: string;
-	color: string;
+	values: HabitFormValues;
 
 	constructor(app: App, opts: HabitFormOptions) {
 		super(app);
 		this.opts = opts;
-		this.name = opts.initialName ?? "";
-		this.color = opts.initialColor ?? PALETTE[0];
+		this.values = {
+			name: opts.initial?.name ?? "",
+			color: opts.initial?.color ?? PALETTE[0],
+			type: opts.initial?.type ?? "build",
+			identity: opts.initial?.identity ?? "",
+			stackedAfter: opts.initial?.stackedAfter ?? "",
+			whenWhere: opts.initial?.whenWhere ?? "",
+			minimumVersion: opts.initial?.minimumVersion ?? "",
+			linkedGoal: opts.initial?.linkedGoal ?? "",
+		};
 	}
 
 	onOpen() {
@@ -123,9 +190,9 @@ class HabitFormModal extends Modal {
 			nameInputEl = text.inputEl;
 			text
 				.setPlaceholder("e.g. Morning run")
-				.setValue(this.name)
+				.setValue(this.values.name)
 				.onChange((value) => {
-					this.name = value;
+					this.values.name = value;
 				});
 			text.inputEl.addEventListener("keydown", (e) => {
 				if (e.key === "Enter") this.submit();
@@ -138,14 +205,70 @@ class HabitFormModal extends Modal {
 		PALETTE.forEach((c) => {
 			const swatch = swatchRow.createDiv({ cls: "habit-tracker-swatch" });
 			swatch.style.backgroundColor = c;
-			if (c === this.color) swatch.addClass("habit-tracker-swatch-selected");
+			if (c === this.values.color) swatch.addClass("habit-tracker-swatch-selected");
 			swatch.onclick = () => {
-				this.color = c;
+				this.values.color = c;
 				swatches.forEach((s) => s.removeClass("habit-tracker-swatch-selected"));
 				swatch.addClass("habit-tracker-swatch-selected");
 			};
 			swatches.push(swatch);
 		});
+
+		new Setting(contentEl).setName("Type").addDropdown((dd) => {
+			dd.addOption("build", "Build (start a habit)");
+			dd.addOption("break", "Break (quit a habit)");
+			dd.setValue(this.values.type);
+			dd.onChange((v) => {
+				this.values.type = v as HabitType;
+			});
+		});
+
+		contentEl.createEl("h4", { text: "Optional — Atomic Habits levers" });
+
+		new Setting(contentEl)
+			.setName("Identity")
+			.setDesc('The person this habit is evidence for, e.g. "I am someone who never misses a workout."')
+			.addText((text) =>
+				text.setValue(this.values.identity).onChange((v) => {
+					this.values.identity = v;
+				})
+			);
+
+		new Setting(contentEl)
+			.setName("Habit stack")
+			.setDesc('Anchor to an existing habit: "After I ___"')
+			.addText((text) =>
+				text.setPlaceholder("my morning coffee").setValue(this.values.stackedAfter).onChange((v) => {
+					this.values.stackedAfter = v;
+				})
+			);
+
+		new Setting(contentEl)
+			.setName("When / where")
+			.setDesc("Implementation intention, e.g. \"7am, kitchen\"")
+			.addText((text) =>
+				text.setValue(this.values.whenWhere).onChange((v) => {
+					this.values.whenWhere = v;
+				})
+			);
+
+		new Setting(contentEl)
+			.setName("Minimum version")
+			.setDesc("The 2-minute-rule fallback for a low-friction day, e.g. \"just put on running shoes.\"")
+			.addText((text) =>
+				text.setValue(this.values.minimumVersion).onChange((v) => {
+					this.values.minimumVersion = v;
+				})
+			);
+
+		new Setting(contentEl)
+			.setName("Linked goal")
+			.setDesc("Note name of the Goals/Quarters file this habit is the system for, e.g. \"2026-Q3\"")
+			.addText((text) =>
+				text.setValue(this.values.linkedGoal).onChange((v) => {
+					this.values.linkedGoal = v;
+				})
+			);
 
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
 		const submitBtn = footer.createEl("button", { text: this.opts.submitLabel, cls: "mod-cta" });
@@ -155,11 +278,19 @@ class HabitFormModal extends Modal {
 	}
 
 	submit() {
-		if (!this.name.trim()) {
+		if (!this.values.name.trim()) {
 			new Notice("Habit needs a name.");
 			return;
 		}
-		this.opts.onSubmit(this.name.trim(), this.color);
+		this.opts.onSubmit({
+			...this.values,
+			name: this.values.name.trim(),
+			identity: this.values.identity.trim(),
+			stackedAfter: this.values.stackedAfter.trim(),
+			whenWhere: this.values.whenWhere.trim(),
+			minimumVersion: this.values.minimumVersion.trim(),
+			linkedGoal: this.values.linkedGoal.trim(),
+		});
 		this.close();
 	}
 
@@ -399,12 +530,18 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				new HabitFormModal(this.plugin.app, {
 					title: "New habit",
 					submitLabel: "Add habit",
-					onSubmit: async (name, color) => {
+					onSubmit: async (values) => {
 						const habit: HabitDefinition = {
-							id: slugify(name) + "-" + Date.now(),
-							name,
-							color,
+							id: slugify(values.name) + "-" + Date.now(),
+							name: values.name,
+							color: values.color,
 							createdAt: todayStr(),
+							type: values.type,
+							identity: values.identity || undefined,
+							stackedAfter: values.stackedAfter || undefined,
+							whenWhere: values.whenWhere || undefined,
+							minimumVersion: values.minimumVersion || undefined,
+							linkedGoal: values.linkedGoal || undefined,
 						};
 						this.plugin.data.habits.push(habit);
 						this.plugin.data.entries[habit.id] = {};
@@ -423,22 +560,31 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		const card = parentEl.createDiv({ cls: "habit-tracker-habit" });
 		card.style.setProperty("--habit-color", habit.color);
+		const isBreak = habit.type === "break";
 
 		const header = card.createDiv({ cls: "habit-tracker-header" });
 		const titleRow = header.createDiv({ cls: "habit-tracker-title-row" });
 		const dot = titleRow.createSpan({ cls: "habit-tracker-dot" });
 		dot.style.backgroundColor = habit.color;
 		titleRow.createSpan({ text: habit.name, cls: "habit-tracker-name" });
+		if (isBreak) {
+			titleRow.createSpan({ text: "BREAK", cls: "habit-tracker-type-badge" });
+		}
 
 		const statsRow = header.createDiv({ cls: "habit-tracker-stats-row" });
 		const streakPill = statsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-streak" });
-		streakPill.createSpan({ text: "🔥", cls: "habit-tracker-pill-icon" });
+		streakPill.createSpan({ text: isBreak ? "🛡️" : "🔥", cls: "habit-tracker-pill-icon" });
 		streakPill.createSpan({ text: `${stats.streak}`, cls: "habit-tracker-pill-value" });
-		streakPill.createSpan({ text: "streak", cls: "habit-tracker-pill-label" });
+		streakPill.createSpan({ text: isBreak ? "clean" : "streak", cls: "habit-tracker-pill-label" });
+
+		const bestPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
+		bestPill.createSpan({ text: "🏆", cls: "habit-tracker-pill-icon" });
+		bestPill.createSpan({ text: `${stats.bestStreak}`, cls: "habit-tracker-pill-value" });
+		bestPill.createSpan({ text: "best", cls: "habit-tracker-pill-label" });
 
 		const totalPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
 		totalPill.createSpan({ text: `${stats.total}`, cls: "habit-tracker-pill-value" });
-		totalPill.createSpan({ text: "total", cls: "habit-tracker-pill-label" });
+		totalPill.createSpan({ text: "votes", cls: "habit-tracker-pill-label" });
 
 		const yearPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
 		yearPill.createSpan({ text: `${stats.totalThisYear}`, cls: "habit-tracker-pill-value" });
@@ -450,11 +596,16 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			new HabitFormModal(this.plugin.app, {
 				title: "Edit habit",
 				submitLabel: "Save",
-				initialName: habit.name,
-				initialColor: habit.color,
-				onSubmit: async (name, color) => {
-					habit.name = name;
-					habit.color = color;
+				initial: habit,
+				onSubmit: async (values) => {
+					habit.name = values.name;
+					habit.color = values.color;
+					habit.type = values.type;
+					habit.identity = values.identity || undefined;
+					habit.stackedAfter = values.stackedAfter || undefined;
+					habit.whenWhere = values.whenWhere || undefined;
+					habit.minimumVersion = values.minimumVersion || undefined;
+					habit.linkedGoal = values.linkedGoal || undefined;
 					await this.plugin.persist();
 					this.plugin.refreshAll();
 				},
@@ -473,6 +624,27 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			}).open();
 		};
 
+		// Atomic Habits detail line(s) — only rendered when set, so a habit
+		// with none of these looks exactly as plain as before.
+		if (habit.identity) {
+			card.createDiv({ text: `→ ${habit.identity}`, cls: "habit-tracker-identity" });
+		}
+		const metaBits: string[] = [];
+		if (habit.stackedAfter) metaBits.push(`⛓ After: ${habit.stackedAfter}`);
+		if (habit.whenWhere) metaBits.push(`📍 ${habit.whenWhere}`);
+		if (metaBits.length) {
+			card.createDiv({ text: metaBits.join("   ·   "), cls: "habit-tracker-meta-line" });
+		}
+		if (habit.minimumVersion) {
+			card.createDiv({ text: `💡 Minimum version: ${habit.minimumVersion}`, cls: "habit-tracker-meta-line" });
+		}
+		if (habit.linkedGoal) {
+			const goalLink = card.createDiv({ text: `🎯 ${habit.linkedGoal}`, cls: "habit-tracker-meta-line habit-tracker-goal-link" });
+			goalLink.onclick = () => {
+				this.plugin.app.workspace.openLinkText(habit.linkedGoal!, "", false);
+			};
+		}
+
 		const grid = card.createDiv({ cls: "habit-tracker-grid-wrap" });
 		grid.setAttr("data-habit-id", habit.id);
 		if (view === "week") {
@@ -484,7 +656,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 	}
 
-	renderYearGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, boolean>) {
+	renderYearGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
 		const year = new Date().getFullYear();
 		const jan1 = new Date(year, 0, 1);
 		const dec31 = new Date(year, 11, 31);
@@ -541,7 +713,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		});
 	}
 
-	renderWeekGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, boolean>) {
+	renderWeekGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
 		const today = new Date();
 		const start = addDays(today, -today.getDay()); // Sunday of this week
 
@@ -552,7 +724,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 	}
 
-	renderMonthGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, boolean>) {
+	renderMonthGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
 		const today = new Date();
 		const year = today.getFullYear();
 		const month = today.getMonth();
@@ -586,7 +758,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	renderCell(
 		gridEl: HTMLElement,
 		habit: HabitDefinition,
-		entries: Record<string, boolean>,
+		entries: Record<string, EntryValue>,
 		d: Date,
 		style: CellStyle
 	) {
@@ -625,15 +797,27 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		if (entries[dateStr]) {
 			cell.addClass(doneCls);
 			cell.style.backgroundColor = habit.color;
+			if (entries[dateStr] === "min") {
+				cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
+			}
 		}
 		if (dateStr === todayStr()) {
 			cell.addClass("habit-tracker-cell-today");
 		}
 		cell.onclick = async () => {
-			entries[dateStr] = !entries[dateStr];
-			if (!entries[dateStr]) delete entries[dateStr];
+			const oldStreak = computeStats(entries).streak;
+			const next = nextEntryValue(entries[dateStr]);
+			if (next === undefined) {
+				delete entries[dateStr];
+			} else {
+				entries[dateStr] = next;
+			}
 			await this.plugin.persist();
 			this.plugin.refreshAll();
+			if (next) {
+				const newStreak = computeStats(entries).streak;
+				this.plugin.maybeCelebrate(habit, oldStreak, newStreak);
+			}
 		};
 	}
 }
@@ -841,6 +1025,20 @@ export default class HabitTrackerPlugin extends Plugin {
 	refreshAll() {
 		for (const block of this.blocks) {
 			block.render();
+		}
+	}
+
+	// Law 4 (Make it Satisfying): an immediate reward beyond the visual
+	// heatmap for crossing a real milestone, since delayed real-world
+	// payoffs are exactly what habit tracking is meant to compensate for.
+	maybeCelebrate(habit: HabitDefinition, oldStreak: number, newStreak: number) {
+		const milestones = [7, 30, 60, 100, 365];
+		for (const m of milestones) {
+			if (oldStreak < m && newStreak >= m) {
+				const label = habit.type === "break" ? "clean streak" : "day streak";
+				new Notice(`🎉 ${newStreak}-${label} on "${habit.name}"! Keep going.`);
+				break;
+			}
 		}
 	}
 }
