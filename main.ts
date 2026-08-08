@@ -251,13 +251,25 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 		this.statusEl = containerEl.createEl("p", { cls: "setting-item-description" });
 		this.updateStatus();
 
-		new Setting(containerEl).setName("Email").addText((text) =>
+		new Setting(containerEl).setName("Email").addText((text) => {
+			// Mobile keyboards auto-capitalize/auto-correct text fields by
+			// default, which can silently mangle an email as you type it
+			// (e.g. capitalizing the first letter) and cause sign-in to
+			// fail with "invalid" even though it looks right. Opt out
+			// explicitly, and normalize case on our end too as a backstop.
+			text.inputEl.setAttribute("autocapitalize", "none");
+			text.inputEl.setAttribute("autocorrect", "off");
+			text.inputEl.setAttribute("spellcheck", "false");
+			text.inputEl.type = "email";
 			text.setPlaceholder("you@example.com").onChange((value) => {
-				this.email = value.trim();
-			})
-		);
+				this.email = value.trim().toLowerCase();
+			});
+		});
 
 		new Setting(containerEl).setName("Password").addText((text) => {
+			text.inputEl.setAttribute("autocapitalize", "none");
+			text.inputEl.setAttribute("autocorrect", "off");
+			text.inputEl.setAttribute("spellcheck", "false");
 			text.inputEl.type = "password";
 			text.onChange((value) => {
 				this.password = value;
