@@ -1,4 +1,5 @@
-import { Plugin, MarkdownRenderChild, Modal, App, Setting, Notice } from "obsidian";
+import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice, Platform } from "obsidian";
+import { createClient, SupabaseClient, Session, RealtimeChannel } from "@supabase/supabase-js";
 
 interface HabitDefinition {
 	id: string;
@@ -13,6 +14,13 @@ interface PluginData {
 }
 
 const DEFAULT_DATA: PluginData = { habits: [], entries: {} };
+
+interface PluginSettings {
+	supabaseUrl: string;
+	supabaseAnonKey: string;
+}
+
+const DEFAULT_SETTINGS: PluginSettings = { supabaseUrl: "", supabaseAnonKey: "" };
 
 const PALETTE = ["#2e8840", "#1872ff", "#e73400", "#dd6f00", "#c30062", "#7bc96f"];
 
@@ -193,6 +201,101 @@ class ConfirmDeleteModal extends Modal {
 	}
 }
 
+class HabitTrackerSettingTab extends PluginSettingTab {
+	plugin: HabitTrackerPlugin;
+	email = "";
+	password = "";
+	statusEl: HTMLElement;
+
+	constructor(app: App, plugin: HabitTrackerPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display() {
+		const { containerEl } = this;
+		containerEl.empty();
+		containerEl.createEl("h2", { text: "Habit Tracker — Sync" });
+		containerEl.createEl("p", {
+			text: "Connect a free Supabase project to sync habits across devices in real time. Leave blank to use this device only (local storage, synced only however your vault itself syncs).",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("Supabase project URL")
+			.setDesc("From your Supabase project's Settings → API.")
+			.addText((text) =>
+				text
+					.setPlaceholder("https://xxxxx.supabase.co")
+					.setValue(this.plugin.settings.supabaseUrl)
+					.onChange(async (value) => {
+						this.plugin.settings.supabaseUrl = value.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Supabase anon public key")
+			.setDesc("Also from Settings → API. Safe to store here — it's a public key, actual access is controlled by row-level security.")
+			.addText((text) =>
+				text
+					.setPlaceholder("eyJ...")
+					.setValue(this.plugin.settings.supabaseAnonKey)
+					.onChange(async (value) => {
+						this.plugin.settings.supabaseAnonKey = value.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		containerEl.createEl("h3", { text: "Sign in" });
+		this.statusEl = containerEl.createEl("p", { cls: "setting-item-description" });
+		this.updateStatus();
+
+		new Setting(containerEl).setName("Email").addText((text) =>
+			text.setPlaceholder("you@example.com").onChange((value) => {
+				this.email = value.trim();
+			})
+		);
+
+		new Setting(containerEl).setName("Password").addText((text) => {
+			text.inputEl.type = "password";
+			text.onChange((value) => {
+				this.password = value;
+			});
+		});
+
+		new Setting(containerEl)
+			.addButton((btn) =>
+				btn.setButtonText("Sign up").onClick(async () => {
+					await this.plugin.signUp(this.email, this.password);
+					this.updateStatus();
+				})
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Sign in")
+					.setCta()
+					.onClick(async () => {
+						await this.plugin.signIn(this.email, this.password);
+						this.updateStatus();
+					})
+			)
+			.addButton((btn) =>
+				btn.setButtonText("Sign out").onClick(async () => {
+					await this.plugin.signOut();
+					this.updateStatus();
+				})
+			);
+	}
+
+	updateStatus() {
+		const session = this.plugin.session;
+		this.statusEl.setText(
+			session ? `Signed in as ${session.user.email}. Syncing live.` : "Not signed in. Habit data is local-only on this device."
+		);
+	}
+}
+
 type ViewMode = "week" | "month" | "year";
 type CellStyle = "year" | "week" | "month";
 
@@ -293,7 +396,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 						};
 						this.plugin.data.habits.push(habit);
 						this.plugin.data.entries[habit.id] = {};
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.persist();
 						this.plugin.refreshAll();
 					},
 				}).open();
@@ -340,7 +443,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				onSubmit: async (name, color) => {
 					habit.name = name;
 					habit.color = color;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.persist();
 					this.plugin.refreshAll();
 				},
 			}).open();
@@ -353,7 +456,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.plugin.data.habits = this.plugin.data.habits.filter((h) => h.id !== habit.id);
 				delete this.plugin.data.entries[habit.id];
 				this.yearScrollByHabit.delete(habit.id);
-				await this.plugin.saveData(this.plugin.data);
+				await this.plugin.persist();
 				this.plugin.refreshAll();
 			}).open();
 		};
@@ -517,29 +620,202 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		cell.onclick = async () => {
 			entries[dateStr] = !entries[dateStr];
 			if (!entries[dateStr]) delete entries[dateStr];
-			await this.plugin.saveData(this.plugin.data);
+			await this.plugin.persist();
 			this.plugin.refreshAll();
 		};
 	}
 }
 
+const SYNC_TABLE = "habit_tracker_data";
+
+function mergeData(local: PluginData, remote: PluginData): PluginData {
+	// Used once, at initial connect — unions rather than picks a winner, so
+	// pre-existing divergent history on either side survives. After this
+	// point, remote realtime updates just replace local state directly.
+	const habitsById = new Map<string, HabitDefinition>();
+	for (const h of remote.habits) habitsById.set(h.id, h);
+	for (const h of local.habits) if (!habitsById.has(h.id)) habitsById.set(h.id, h);
+
+	const entries: PluginData["entries"] = {};
+	const allIds = new Set([...Object.keys(local.entries), ...Object.keys(remote.entries)]);
+	for (const id of allIds) {
+		entries[id] = { ...(remote.entries[id] || {}), ...(local.entries[id] || {}) };
+	}
+
+	return { habits: Array.from(habitsById.values()), entries };
+}
+
 export default class HabitTrackerPlugin extends Plugin {
 	data: PluginData;
+	settings: PluginSettings;
+	supabase: SupabaseClient | null = null;
+	session: Session | null = null;
+	private realtimeChannel: RealtimeChannel | null = null;
 	private blocks: Set<HabitTrackerBlock> = new Set();
 
 	async onload() {
-		this.data = Object.assign({}, DEFAULT_DATA, await this.loadData());
-		if (!this.data.habits) this.data.habits = [];
-		if (!this.data.entries) this.data.entries = {};
+		const saved = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved?.settings);
+		this.data = {
+			habits: saved?.habits ?? DEFAULT_DATA.habits,
+			entries: saved?.entries ?? DEFAULT_DATA.entries,
+		};
+
+		this.addSettingTab(new HabitTrackerSettingTab(this.app, this));
 
 		this.registerMarkdownCodeBlockProcessor("habit-tracker", (source, el, ctx) => {
 			const filterMatch = source.match(/^\s*habit:\s*(.+)\s*$/m);
 			const filterName = filterMatch ? filterMatch[1].trim() : null;
 			const viewMatch = source.match(/^\s*view:\s*(week|month|year)\s*$/m);
-			const defaultView: ViewMode = viewMatch ? (viewMatch[1] as ViewMode) : "year";
+			// Year view's wide, horizontally-scrolling grid works well with a
+			// mouse on a desktop pane, but is a poor first impression on a
+			// narrow phone screen — default to Week there instead unless the
+			// note explicitly requests a view.
+			const defaultView: ViewMode = viewMatch ? (viewMatch[1] as ViewMode) : Platform.isMobile ? "week" : "year";
 			const block = new HabitTrackerBlock(el, this, filterName, defaultView);
 			ctx.addChild(block);
 		});
+
+		// Local fallback: pick up changes written to the local file by
+		// another process (e.g. a manual restore) without requiring a
+		// restart. This is a secondary safety net — the primary sync path
+		// once signed in is the Supabase realtime subscription below.
+		this.registerInterval(
+			window.setInterval(async () => {
+				const onDisk = await this.loadData();
+				if (!onDisk) return;
+				const onDiskData: PluginData = { habits: onDisk.habits ?? [], entries: onDisk.entries ?? {} };
+				if (JSON.stringify(onDiskData) !== JSON.stringify(this.data)) {
+					this.data = onDiskData;
+					this.refreshAll();
+				}
+			}, 5000)
+		);
+
+		if (this.settings.supabaseUrl && this.settings.supabaseAnonKey) {
+			await this.initSupabase();
+		}
+	}
+
+	onunload() {
+		if (this.realtimeChannel) this.supabase?.removeChannel(this.realtimeChannel);
+	}
+
+	async initSupabase() {
+		this.supabase = createClient(this.settings.supabaseUrl, this.settings.supabaseAnonKey);
+		const { data } = await this.supabase.auth.getSession();
+		if (data.session) {
+			this.session = data.session;
+			await this.connectRemote();
+		}
+	}
+
+	async saveSettings() {
+		await this.saveLocal();
+		if (this.settings.supabaseUrl && this.settings.supabaseAnonKey && !this.supabase) {
+			await this.initSupabase();
+		}
+	}
+
+	async signUp(email: string, password: string) {
+		if (!this.supabase) {
+			new Notice("Enter the Supabase URL and anon key first.");
+			return;
+		}
+		const { error } = await this.supabase.auth.signUp({ email, password });
+		if (error) {
+			new Notice(`Sign up failed: ${error.message}`);
+		} else {
+			new Notice("Account created. Check your email to confirm, then sign in.");
+		}
+	}
+
+	async signIn(email: string, password: string) {
+		if (!this.supabase) {
+			new Notice("Enter the Supabase URL and anon key first.");
+			return;
+		}
+		const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
+		if (error) {
+			new Notice(`Sign in failed: ${error.message}`);
+			return;
+		}
+		this.session = data.session;
+		new Notice("Signed in. Syncing…");
+		await this.connectRemote();
+	}
+
+	async signOut() {
+		if (this.realtimeChannel) {
+			this.supabase?.removeChannel(this.realtimeChannel);
+			this.realtimeChannel = null;
+		}
+		await this.supabase?.auth.signOut();
+		this.session = null;
+		new Notice("Signed out. This device is now local-only.");
+	}
+
+	async connectRemote() {
+		if (!this.supabase || !this.session) return;
+
+		const { data: row } = await this.supabase
+			.from(SYNC_TABLE)
+			.select("data")
+			.eq("user_id", this.session.user.id)
+			.maybeSingle();
+
+		if (row?.data) {
+			this.data = mergeData(this.data, row.data as PluginData);
+		}
+		await this.persist();
+		this.refreshAll();
+		this.subscribeRealtime();
+	}
+
+	subscribeRealtime() {
+		if (!this.supabase || !this.session) return;
+		if (this.realtimeChannel) this.supabase.removeChannel(this.realtimeChannel);
+
+		this.realtimeChannel = this.supabase
+			.channel("habit_tracker_data_changes")
+			.on(
+				"postgres_changes",
+				{
+					event: "UPDATE",
+					schema: "public",
+					table: SYNC_TABLE,
+					filter: `user_id=eq.${this.session.user.id}`,
+				},
+				(payload) => {
+					const incoming = payload.new.data as PluginData;
+					this.data = { habits: incoming.habits ?? [], entries: incoming.entries ?? {} };
+					this.saveLocal();
+					this.refreshAll();
+				}
+			)
+			.subscribe();
+	}
+
+	async saveLocal() {
+		await this.saveData({ settings: this.settings, habits: this.data.habits, entries: this.data.entries });
+	}
+
+	// The single write path for every mutation (add/edit/delete habit,
+	// toggle a day): saves locally first so the device always has an
+	// up-to-date offline copy, then pushes to Supabase if signed in so
+	// other devices' realtime subscriptions pick it up immediately.
+	async persist() {
+		await this.saveLocal();
+		if (this.supabase && this.session) {
+			const { error } = await this.supabase.from(SYNC_TABLE).upsert({
+				user_id: this.session.user.id,
+				data: this.data,
+				updated_at: new Date().toISOString(),
+			});
+			if (error) {
+				new Notice(`Sync failed, saved locally only: ${error.message}`);
+			}
+		}
 	}
 
 	registerBlock(block: HabitTrackerBlock) {

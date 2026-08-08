@@ -415,3 +415,101 @@
 	justify-content: flex-end;
 	margin-top: 12px;
 }
+
+/* ---- Touch devices ---- */
+/* (hover: none) targets touch input specifically, regardless of screen
+   size — a touch device never fires :hover, so anything that only reveals
+   itself or gives feedback on hover is invisible/undiscoverable there.
+   This block makes those affordances visible by default instead, and
+   brings tap targets up to Apple/Google's ~44px minimum recommendation. */
+@media (hover: none) {
+	.habit-tracker-edit-btn,
+	.habit-tracker-delete-btn {
+		opacity: 0.8;
+		width: 40px;
+		height: 40px;
+		font-size: 1.05em;
+	}
+
+	.habit-tracker-view-btn {
+		padding: 8px 14px;
+		font-size: 0.85em;
+	}
+
+	.habit-tracker-swatch {
+		width: 36px;
+		height: 36px;
+	}
+
+	.habit-tracker-add-card {
+		padding: 16px;
+	}
+
+	/* Tap feedback in place of hover feedback. */
+	.habit-tracker-cell:active {
+		filter: brightness(1.25);
+	}
+
+	.habit-tracker-week-cell:active {
+		border-color: var(--habit-color, var(--text-accent));
+	}
+
+	.habit-tracker-add-card:active {
+		border-color: var(--interactive-accent);
+		background-color: var(--background-modifier-hover);
+	}
+}
+
+/* ---- Narrow screens ---- */
+/* Independent of touch vs. mouse — a desktop window can also be this
+   narrow. Tightens spacing and lets the year grid shrink further (still
+   horizontally scrollable, just not forced to a desktop-sized minimum)
+   so the widget doesn't waste a phone's limited width on padding. */
+@media (max-width: 480px) {
+	.habit-tracker-root {
+		padding: 0 6px;
+		font-size: 1em;
+	}
+
+	.habit-tracker-habit {
+		padding: 14px 14px 16px;
+	}
+
+	.habit-tracker-header {
+		gap: 6px;
+	}
+
+	.habit-tracker-stats-row {
+		gap: 4px;
+	}
+
+	.habit-tracker-pill {
+		padding: 4px 8px;
+		font-size: 0.72em;
+	}
+
+	.habit-tracker-name {
+		font-size: 1em;
+	}
+
+	.habit-tracker-months,
+	.habit-tracker-grid {
+		min-width: 900px;
+	}
+
+	.habit-tracker-week-grid {
+		gap: 4px;
+	}
+
+	.habit-tracker-week-cell {
+		max-width: none;
+	}
+
+	.habit-tracker-week-date-label {
+		font-size: 1.15em;
+	}
+
+	.habit-tracker-month-grid {
+		gap: 4px;
+	}
+}

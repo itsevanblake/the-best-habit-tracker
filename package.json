@@ -4,11 +4,14 @@
   "description": "Click-to-toggle habit heatmap plugin for Obsidian",
   "main": "main.js",
   "scripts": {
-    "build": "esbuild main.ts --bundle --external:obsidian --format=cjs --target=es2018 --outfile=main.js"
+    "build": "esbuild main.ts --bundle --minify --external:obsidian --format=cjs --target=es2018 --outfile=main.js"
   },
   "devDependencies": {
     "esbuild": "^0.20.0",
     "obsidian": "latest",
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.2"
   }
 }
