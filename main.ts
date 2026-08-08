@@ -567,9 +567,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const dot = titleRow.createSpan({ cls: "habit-tracker-dot" });
 		dot.style.backgroundColor = habit.color;
 		titleRow.createSpan({ text: habit.name, cls: "habit-tracker-name" });
-		if (isBreak) {
-			titleRow.createSpan({ text: "BREAK", cls: "habit-tracker-type-badge" });
-		}
+		titleRow.createSpan({
+			text: isBreak ? "BREAK" : "BUILD",
+			cls: "habit-tracker-type-badge" + (isBreak ? " habit-tracker-type-badge-break" : " habit-tracker-type-badge-build"),
+		});
 
 		const statsRow = header.createDiv({ cls: "habit-tracker-stats-row" });
 		const streakPill = statsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-streak" });
