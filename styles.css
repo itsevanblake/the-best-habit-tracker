@@ -35,8 +35,27 @@
 
 .habit-tracker-global-toggle-row {
 	display: flex;
-	justify-content: flex-end;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	flex-wrap: wrap;
 	margin-bottom: 10px;
+}
+
+.habit-tracker-walkthrough-btn {
+	font-size: 0.78em;
+	font-weight: 500;
+	padding: 5px 10px;
+	cursor: pointer;
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	color: var(--text-muted);
+}
+
+.habit-tracker-walkthrough-btn:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
 }
 
 .habit-tracker-view-toggle {
@@ -463,6 +482,10 @@
 
 /* ---- Add habit modal ---- */
 
+.habit-tracker-modal {
+	position: relative;
+}
+
 .habit-tracker-modal h3 {
 	margin-top: 0;
 }
@@ -835,5 +858,74 @@
 
 	.habit-tracker-month-grid {
 		gap: 4px;
+	}
+}
+
+/* ---- Habit creation walkthrough ---- */
+
+.habit-tracker-walkthrough-highlight {
+	position: relative;
+	z-index: 1;
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 4px;
+	border-radius: 6px;
+	background-color: var(--background-modifier-hover);
+}
+
+.habit-tracker-walkthrough-tooltip {
+	position: absolute;
+	z-index: 2;
+	width: min(320px, calc(100% - 24px));
+	padding: 12px 14px;
+	border-radius: 10px;
+	background-color: var(--background-primary);
+	border: 1px solid var(--interactive-accent);
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.habit-tracker-walkthrough-progress {
+	font-size: 0.75em;
+	font-weight: 600;
+	color: var(--interactive-accent);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	margin-bottom: 4px;
+}
+
+.habit-tracker-walkthrough-title {
+	display: block;
+	font-size: 0.95em;
+	margin-bottom: 4px;
+}
+
+.habit-tracker-walkthrough-body {
+	margin: 0 0 10px;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	line-height: 1.4;
+}
+
+.habit-tracker-walkthrough-btns {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.habit-tracker-walkthrough-skip {
+	margin-right: auto;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: 0.8em;
+}
+
+.habit-tracker-walkthrough-skip:hover {
+	color: var(--text-normal);
+}
+
+@media (hover: none) {
+	.habit-tracker-walkthrough-tooltip {
+		width: min(340px, calc(100% - 16px));
 	}
 }

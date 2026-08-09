@@ -30,9 +30,10 @@ interface PluginData {
 	habits: HabitDefinition[];
 	entries: Record<string, Record<string, EntryValue>>; // habitId -> "YYYY-MM-DD" -> value
 	customColors: string[]; // user-saved colors from the color wheel, shown alongside the preset PALETTE
+	hasCreatedFirstHabit: boolean; // once true, the habit creation walkthrough stops opening automatically
 }
 
-const DEFAULT_DATA: PluginData = { habits: [], entries: {}, customColors: [] };
+const DEFAULT_DATA: PluginData = { habits: [], entries: {}, customColors: [], hasCreatedFirstHabit: false };
 
 interface PluginSettings {
 	supabaseUrl: string;
@@ -320,6 +321,14 @@ interface HabitFormOptions {
 	submitLabel: string;
 	initial?: Partial<HabitFormValues>;
 	onSubmit: (values: HabitFormValues) => void;
+	walkthrough?: boolean;
+}
+
+interface WalkthroughStep {
+	title: string;
+	body: string;
+	target: HTMLElement;
+	focusEl?: HTMLElement;
 }
 
 class HabitFormModal extends Modal {
@@ -387,8 +396,11 @@ class HabitFormModal extends Modal {
 		// can't be typed into or deleted) + auto-growing textarea (native
 		// placeholder clears itself the instant that specific field is
 		// typed into) + "?" help toggle.
+		const leverElements: Partial<Record<keyof HabitLevers, { setting: Setting; textareaEl: HTMLTextAreaElement }>> = {};
 		const renderLeverRow = (key: keyof HabitLevers) => {
+			let textareaEl: HTMLTextAreaElement;
 			const setting = new Setting(contentEl).setName(LEVER_LABELS[key]).addTextArea((text) => {
+				textareaEl = text.inputEl;
 				if (this.isNew) text.setPlaceholder(EXAMPLE_LEVERS[key]);
 				text.setValue(this.values[key]).onChange((v) => {
 					this.values[key] = v;
@@ -400,6 +412,7 @@ class HabitFormModal extends Modal {
 				advanceOnEnter(text.inputEl, true);
 			});
 			setting.settingEl.addClass("habit-tracker-lever-setting");
+			leverElements[key] = { setting, textareaEl: textareaEl! };
 			const info = LEVER_TERM_INFO[key];
 			addHelpToggle(setting, contentEl, info.term, info.definition, EXAMPLE_LEVERS[key]);
 		};
@@ -411,7 +424,7 @@ class HabitFormModal extends Modal {
 		});
 		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key);
 
-		new Setting(contentEl).setName("Color");
+		const colorSetting = new Setting(contentEl).setName("Color");
 		const swatchRow = contentEl.createDiv({ cls: "habit-tracker-swatch-row" });
 		const swatches: HTMLElement[] = [];
 		const deselectSwatches = () => swatches.forEach((s) => s.removeClass("habit-tracker-swatch-selected"));
@@ -473,7 +486,9 @@ class HabitFormModal extends Modal {
 		PALETTE.forEach((c) => renderSwatch(c, false));
 		this.plugin.data.customColors.forEach((c) => renderSwatch(c, true));
 
+		let typeSelectEl: HTMLSelectElement;
 		const typeSetting = new Setting(contentEl).setName("Type").addDropdown((dd) => {
+			typeSelectEl = dd.selectEl;
 			dd.addOption("build", "Build (start a habit)");
 			dd.addOption("break", "Break (quit a habit)");
 			dd.setValue(this.values.type);
@@ -510,11 +525,13 @@ class HabitFormModal extends Modal {
 
 		for (const key of FORMULA_KEYS) renderLeverRow(key);
 
+		let commitCheckboxEl: HTMLInputElement | undefined;
 		if (this.isNew) {
 			// Wrapping the checkbox and text in a single <label> makes the
 			// whole row clickable, not just the small checkbox itself.
 			const commitRow = contentEl.createEl("label", { cls: "habit-tracker-commit-row" });
 			const commitCheckbox = commitRow.createEl("input", { cls: "habit-tracker-commit-checkbox" });
+			commitCheckboxEl = commitCheckbox;
 			commitCheckbox.type = "checkbox";
 			commitCheckbox.checked = this.commitChecked;
 			commitCheckbox.onchange = () => {
@@ -530,7 +547,202 @@ class HabitFormModal extends Modal {
 		submitBtn.onclick = () => this.submit();
 		focusOrder.push(submitBtn);
 
+		if (this.opts.walkthrough) this.startWalkthrough(contentEl, { nameSetting, nameInputEl, leverElements, colorSetting, swatchRow, typeSetting, typeSelectEl, commitCheckboxEl, submitBtn });
+
 		window.setTimeout(() => nameInputEl?.focus(), 0);
+	}
+
+	// A guided, spotlight-and-tooltip tour through the form, used for a
+	// user's very first habit (or whenever they click "Habit Creation
+	// Walkthrough"). Each step highlights one field and explains it in
+	// plain language; the tour advances either via the tooltip's own
+	// Next/Back buttons, or naturally by the user filling out/selecting
+	// that step's field directly (typing + Enter/Tab away, picking a
+	// color, choosing Build/Break, checking the commit box).
+	startWalkthrough(
+		contentEl: HTMLElement,
+		refs: {
+			nameSetting: Setting;
+			nameInputEl: HTMLInputElement;
+			leverElements: Partial<Record<keyof HabitLevers, { setting: Setting; textareaEl: HTMLTextAreaElement }>>;
+			colorSetting: Setting;
+			swatchRow: HTMLElement;
+			typeSetting: Setting;
+			typeSelectEl: HTMLSelectElement;
+			commitCheckboxEl?: HTMLInputElement;
+			submitBtn: HTMLButtonElement;
+		}
+	) {
+		const lever = (key: keyof HabitLevers) => refs.leverElements[key]!;
+		const steps: WalkthroughStep[] = [
+			{
+				title: "1. Name it",
+				body: 'Give your habit a short, concrete name — something you\'d recognize at a glance, like "Morning run".',
+				target: refs.nameSetting.settingEl,
+				focusEl: refs.nameInputEl,
+			},
+			{
+				title: `2. ${LEVER_TERM_INFO.identity.term}`,
+				body: `${LEVER_TERM_INFO.identity.definition} Try: "${EXAMPLE_LEVERS.identity}"`,
+				target: lever("identity").setting.settingEl,
+				focusEl: lever("identity").textareaEl,
+			},
+			{
+				title: `3. ${LEVER_TERM_INFO.linkedGoal.term}`,
+				body: `${LEVER_TERM_INFO.linkedGoal.definition} Try: "${EXAMPLE_LEVERS.linkedGoal}"`,
+				target: lever("linkedGoal").setting.settingEl,
+				focusEl: lever("linkedGoal").textareaEl,
+			},
+			{
+				title: "4. Pick a color",
+				body: "Give the habit a color so its heatmap stands out from the others at a glance. Click a preset, or pick and save a custom one from the wheel.",
+				target: refs.swatchRow,
+			},
+			{
+				title: `5. ${TYPE_INFO.term}`,
+				body: `${TYPE_INFO.definition} Pick Build if you're starting this habit, or Break if you're trying to quit it.`,
+				target: refs.typeSetting.settingEl,
+				focusEl: refs.typeSelectEl,
+			},
+			{
+				title: `6. ${LEVER_TERM_INFO.stackedAfter.term}`,
+				body: `${LEVER_TERM_INFO.stackedAfter.definition} Try: "${EXAMPLE_LEVERS.stackedAfter}"`,
+				target: lever("stackedAfter").setting.settingEl,
+				focusEl: lever("stackedAfter").textareaEl,
+			},
+			{
+				title: `7. ${LEVER_TERM_INFO.craving.term}`,
+				body: `${LEVER_TERM_INFO.craving.definition} Try: "${EXAMPLE_LEVERS.craving}"`,
+				target: lever("craving").setting.settingEl,
+				focusEl: lever("craving").textareaEl,
+			},
+			{
+				title: `8. ${LEVER_TERM_INFO.minimumVersion.term}`,
+				body: `${LEVER_TERM_INFO.minimumVersion.definition} Try: "${EXAMPLE_LEVERS.minimumVersion}"`,
+				target: lever("minimumVersion").setting.settingEl,
+				focusEl: lever("minimumVersion").textareaEl,
+			},
+			{
+				title: `9. ${LEVER_TERM_INFO.reward.term}`,
+				body: `${LEVER_TERM_INFO.reward.definition} Try: "${EXAMPLE_LEVERS.reward}"`,
+				target: lever("reward").setting.settingEl,
+				focusEl: lever("reward").textareaEl,
+			},
+		];
+
+		if (refs.commitCheckboxEl) {
+			steps.push({
+				title: "10. Commit",
+				body: "Check the box to commit to this habit — a small, deliberate act that makes the intention concrete before you start.",
+				target: (refs.commitCheckboxEl.closest("label") as HTMLElement) ?? refs.commitCheckboxEl,
+				focusEl: refs.commitCheckboxEl,
+			});
+		}
+
+		steps.push({
+			title: `${steps.length + 1}. Add the habit`,
+			body: "That's the whole formula. Click below to create your first habit and start your streak.",
+			target: refs.submitBtn,
+		});
+
+		const tooltip = contentEl.createDiv({ cls: "habit-tracker-walkthrough-tooltip" });
+		const progressEl = tooltip.createDiv({ cls: "habit-tracker-walkthrough-progress" });
+		const titleEl = tooltip.createEl("strong", { cls: "habit-tracker-walkthrough-title" });
+		const bodyEl = tooltip.createEl("p", { cls: "habit-tracker-walkthrough-body" });
+		const btnRow = tooltip.createDiv({ cls: "habit-tracker-walkthrough-btns" });
+		const skipBtn = btnRow.createEl("button", { text: "Skip walkthrough", cls: "habit-tracker-walkthrough-skip" });
+		const backBtn = btnRow.createEl("button", { text: "Back" });
+		const nextBtn = btnRow.createEl("button", { text: "Next", cls: "mod-cta" });
+		skipBtn.type = "button";
+		backBtn.type = "button";
+		nextBtn.type = "button";
+
+		let stepIndex = 0;
+		let active = true;
+
+		const positionTooltip = (target: HTMLElement) => {
+			const contentRect = contentEl.getBoundingClientRect();
+			const targetRect = target.getBoundingClientRect();
+			const top = targetRect.bottom - contentRect.top + contentEl.scrollTop + 10;
+			const maxLeft = Math.max(0, contentEl.clientWidth - tooltip.offsetWidth);
+			const left = Math.min(Math.max(0, targetRect.left - contentRect.left), maxLeft);
+			tooltip.style.top = `${top}px`;
+			tooltip.style.left = `${left}px`;
+		};
+
+		const endWalkthrough = () => {
+			active = false;
+			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
+			tooltip.remove();
+		};
+
+		const showStep = (i: number) => {
+			if (!active) return;
+			if (i >= steps.length) {
+				endWalkthrough();
+				return;
+			}
+			stepIndex = Math.max(0, i);
+			const step = steps[stepIndex];
+			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
+			step.target.addClass("habit-tracker-walkthrough-highlight");
+			progressEl.setText(`Step ${stepIndex + 1} of ${steps.length}`);
+			titleEl.setText(step.title);
+			bodyEl.setText(step.body);
+			backBtn.style.visibility = stepIndex === 0 ? "hidden" : "visible";
+			nextBtn.setText(stepIndex === steps.length - 1 ? "Got it" : "Next");
+			step.target.scrollIntoView({ block: "center", behavior: "smooth" });
+			window.setTimeout(() => {
+				positionTooltip(step.target);
+				step.focusEl?.focus();
+			}, 150);
+		};
+
+		skipBtn.onclick = () => endWalkthrough();
+		backBtn.onclick = () => showStep(stepIndex - 1);
+		nextBtn.onclick = () => showStep(stepIndex + 1);
+
+		// Following along by typing/clicking/pressing Enter in the actual
+		// fields advances the tour too, not just the Next button — so the
+		// tooltip tracks whichever way the user chooses to move.
+		const bindAdvance = (el: HTMLElement | undefined, type: string, index: number, predicate?: () => boolean) => {
+			if (!el || index < 0) return;
+			el.addEventListener(type, () => {
+				if (!active || stepIndex !== index) return;
+				if (predicate && !predicate()) return;
+				showStep(index + 1);
+			});
+		};
+
+		steps.forEach((step, i) => {
+			const el = step.focusEl;
+			if (el instanceof HTMLTextAreaElement) {
+				bindAdvance(el, "blur", i, () => el.value.trim().length > 0);
+			} else if (el instanceof HTMLInputElement && el.type !== "checkbox") {
+				bindAdvance(el, "blur", i, () => el.value.trim().length > 0);
+			}
+		});
+		bindAdvance(
+			refs.swatchRow,
+			"click",
+			steps.findIndex((s) => s.target === refs.swatchRow)
+		);
+		bindAdvance(
+			refs.typeSelectEl,
+			"change",
+			steps.findIndex((s) => s.focusEl === refs.typeSelectEl)
+		);
+		if (refs.commitCheckboxEl) {
+			const commitEl = refs.commitCheckboxEl;
+			bindAdvance(
+				commitEl,
+				"change",
+				steps.findIndex((s) => s.focusEl === commitEl),
+				() => commitEl.checked
+			);
+		}
+
+		showStep(0);
 	}
 
 	updateCommitLabel() {
@@ -768,6 +980,14 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			: data.habits;
 
 		const toggleRow = el.createDiv({ cls: "habit-tracker-global-toggle-row" });
+		if (!this.filterName) {
+			const walkthroughBtn = toggleRow.createEl("button", {
+				text: "🎓 Habit Creation Walkthrough",
+				cls: "habit-tracker-walkthrough-btn",
+			});
+			walkthroughBtn.type = "button";
+			walkthroughBtn.onclick = () => this.openAddHabitModal(true);
+		}
 		const toggle = toggleRow.createDiv({ cls: "habit-tracker-view-toggle" });
 		const modeLabels: Record<ViewMode, string> = { week: "Week", month: "Month", year: "Year", yeardays: "Year - Days" };
 		(["week", "month", "year", "yeardays"] as ViewMode[]).forEach((mode) => {
@@ -802,32 +1022,36 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			const addCard = list.createDiv({ cls: "habit-tracker-add-card" });
 			addCard.createSpan({ text: "+", cls: "habit-tracker-add-icon" });
 			addCard.createSpan({ text: "Add habit", cls: "habit-tracker-add-label" });
-			addCard.onclick = () => {
-				new HabitFormModal(this.plugin.app, this.plugin, {
-					title: "New habit",
-					submitLabel: "Add habit",
-					onSubmit: async (values) => {
-						const habit: HabitDefinition = {
-							id: slugify(values.name) + "-" + Date.now(),
-							name: values.name,
-							color: values.color,
-							createdAt: todayStr(),
-							type: values.type,
-							stackedAfter: values.stackedAfter || undefined,
-							craving: values.craving || undefined,
-							minimumVersion: values.minimumVersion || undefined,
-							reward: values.reward || undefined,
-							identity: values.identity || undefined,
-							linkedGoal: values.linkedGoal || undefined,
-						};
-						this.plugin.data.habits.push(habit);
-						this.plugin.data.entries[habit.id] = {};
-						await this.plugin.persist();
-						this.plugin.refreshAll();
-					},
-				}).open();
-			};
+			addCard.onclick = () => this.openAddHabitModal(!this.plugin.data.hasCreatedFirstHabit);
 		}
+	}
+
+	openAddHabitModal(walkthrough: boolean) {
+		new HabitFormModal(this.plugin.app, this.plugin, {
+			title: "New habit",
+			submitLabel: "Add habit",
+			walkthrough,
+			onSubmit: async (values) => {
+				const habit: HabitDefinition = {
+					id: slugify(values.name) + "-" + Date.now(),
+					name: values.name,
+					color: values.color,
+					createdAt: todayStr(),
+					type: values.type,
+					stackedAfter: values.stackedAfter || undefined,
+					craving: values.craving || undefined,
+					minimumVersion: values.minimumVersion || undefined,
+					reward: values.reward || undefined,
+					identity: values.identity || undefined,
+					linkedGoal: values.linkedGoal || undefined,
+				};
+				this.plugin.data.habits.push(habit);
+				this.plugin.data.entries[habit.id] = {};
+				this.plugin.data.hasCreatedFirstHabit = true;
+				await this.plugin.persist();
+				this.plugin.refreshAll();
+			},
+		}).open();
 	}
 
 	renderHabit(parentEl: HTMLElement, habit: HabitDefinition) {
@@ -1145,8 +1369,9 @@ function mergeData(local: PluginData, remote: PluginData): PluginData {
 	}
 
 	const customColors = Array.from(new Set([...(remote.customColors ?? []), ...(local.customColors ?? [])]));
+	const hasCreatedFirstHabit = !!(remote.hasCreatedFirstHabit || local.hasCreatedFirstHabit);
 
-	return { habits: Array.from(habitsById.values()), entries, customColors };
+	return { habits: Array.from(habitsById.values()), entries, customColors, hasCreatedFirstHabit };
 }
 
 export default class HabitTrackerPlugin extends Plugin {
@@ -1164,6 +1389,7 @@ export default class HabitTrackerPlugin extends Plugin {
 			habits: saved?.habits ?? DEFAULT_DATA.habits,
 			entries: saved?.entries ?? DEFAULT_DATA.entries,
 			customColors: saved?.customColors ?? DEFAULT_DATA.customColors,
+			hasCreatedFirstHabit: saved?.hasCreatedFirstHabit ?? DEFAULT_DATA.hasCreatedFirstHabit,
 		};
 
 		this.addSettingTab(new HabitTrackerSettingTab(this.app, this));
@@ -1193,6 +1419,7 @@ export default class HabitTrackerPlugin extends Plugin {
 					habits: onDisk.habits ?? [],
 					entries: onDisk.entries ?? {},
 					customColors: onDisk.customColors ?? [],
+					hasCreatedFirstHabit: onDisk.hasCreatedFirstHabit ?? false,
 				};
 				if (JSON.stringify(onDiskData) !== JSON.stringify(this.data)) {
 					this.data = onDiskData;
@@ -1301,6 +1528,7 @@ export default class HabitTrackerPlugin extends Plugin {
 						habits: incoming.habits ?? [],
 						entries: incoming.entries ?? {},
 						customColors: incoming.customColors ?? [],
+						hasCreatedFirstHabit: incoming.hasCreatedFirstHabit ?? false,
 					};
 					this.saveLocal();
 					this.refreshAll();
@@ -1315,6 +1543,7 @@ export default class HabitTrackerPlugin extends Plugin {
 			habits: this.data.habits,
 			entries: this.data.entries,
 			customColors: this.data.customColors,
+			hasCreatedFirstHabit: this.data.hasCreatedFirstHabit,
 		});
 	}
 
