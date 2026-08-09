@@ -621,6 +621,7 @@
 }
 
 .habit-tracker-swatch {
+	position: relative;
 	width: 26px;
 	height: 26px;
 	border-radius: 50%;
@@ -636,6 +637,41 @@
 
 .habit-tracker-swatch-selected {
 	outline-color: var(--text-normal);
+}
+
+/* Small "x" pinned to a custom swatch's corner, deleting just that saved
+   color — always visible (not hover-only) so it works on touch devices. */
+.habit-tracker-swatch-delete {
+	position: absolute;
+	top: -6px;
+	right: -6px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+	font-size: 10px;
+	line-height: 14px;
+	text-align: center;
+	cursor: pointer;
+}
+
+.habit-tracker-save-color-btn {
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: var(--background-secondary);
+	cursor: pointer;
+	font-size: 13px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.habit-tracker-save-color-btn:hover {
+	background: var(--background-modifier-hover);
 }
 
 .habit-tracker-color-wheel {
@@ -711,9 +747,17 @@
 	}
 
 	.habit-tracker-swatch,
-	.habit-tracker-color-wheel {
+	.habit-tracker-color-wheel,
+	.habit-tracker-save-color-btn {
 		width: 36px;
 		height: 36px;
+	}
+
+	.habit-tracker-swatch-delete {
+		width: 18px;
+		height: 18px;
+		font-size: 13px;
+		line-height: 18px;
 	}
 
 	.habit-tracker-add-card {

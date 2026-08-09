@@ -29,9 +29,10 @@ type EntryValue = true | "min";
 interface PluginData {
 	habits: HabitDefinition[];
 	entries: Record<string, Record<string, EntryValue>>; // habitId -> "YYYY-MM-DD" -> value
+	customColors: string[]; // user-saved colors from the color wheel, shown alongside the preset PALETTE
 }
 
-const DEFAULT_DATA: PluginData = { habits: [], entries: {} };
+const DEFAULT_DATA: PluginData = { habits: [], entries: {}, customColors: [] };
 
 interface PluginSettings {
 	supabaseUrl: string;
@@ -322,14 +323,16 @@ interface HabitFormOptions {
 }
 
 class HabitFormModal extends Modal {
+	plugin: HabitTrackerPlugin;
 	opts: HabitFormOptions;
 	values: HabitFormValues;
 	isNew: boolean;
 	commitChecked = false;
 	commitLabelTextEl: HTMLElement;
 
-	constructor(app: App, opts: HabitFormOptions) {
+	constructor(app: App, plugin: HabitTrackerPlugin, opts: HabitFormOptions) {
 		super(app);
+		this.plugin = plugin;
 		this.opts = opts;
 		this.isNew = !opts.initial;
 		this.values = {
@@ -412,7 +415,10 @@ class HabitFormModal extends Modal {
 		const swatchRow = contentEl.createDiv({ cls: "habit-tracker-swatch-row" });
 		const swatches: HTMLElement[] = [];
 		const deselectSwatches = () => swatches.forEach((s) => s.removeClass("habit-tracker-swatch-selected"));
-		PALETTE.forEach((c) => {
+
+		// Renders one preset/custom color circle, inserted right before the
+		// color wheel + save button so newly-saved colors land next to them.
+		const renderSwatch = (c: string, deletable: boolean) => {
 			const swatch = swatchRow.createDiv({ cls: "habit-tracker-swatch" });
 			swatch.style.backgroundColor = c;
 			if (c === this.values.color) swatch.addClass("habit-tracker-swatch-selected");
@@ -423,11 +429,24 @@ class HabitFormModal extends Modal {
 				colorWheel.value = c;
 			};
 			swatches.push(swatch);
-		});
+			swatchRow.insertBefore(swatch, colorWheel);
+			if (deletable) {
+				const delBtn = swatch.createSpan({ cls: "habit-tracker-swatch-delete", text: "×" });
+				delBtn.setAttr("aria-label", "Delete saved color");
+				delBtn.onclick = (e) => {
+					e.stopPropagation();
+					this.plugin.data.customColors = this.plugin.data.customColors.filter((x) => x !== c);
+					this.plugin.persist();
+					swatches.splice(swatches.indexOf(swatch), 1);
+					swatch.remove();
+				};
+			}
+			return swatch;
+		};
 
-		// Full color wheel for anything the 8 presets don't cover — a
-		// native <input type="color"> opens the OS's own color picker
-		// (a real wheel/spectrum) on both desktop and mobile.
+		// Full color wheel for anything the presets don't cover — a native
+		// <input type="color"> opens the OS's own color picker (a real
+		// wheel/spectrum) on both desktop and mobile.
 		const colorWheel = swatchRow.createEl("input", { cls: "habit-tracker-color-wheel" });
 		colorWheel.type = "color";
 		colorWheel.value = this.values.color;
@@ -436,6 +455,23 @@ class HabitFormModal extends Modal {
 			this.values.color = colorWheel.value;
 			deselectSwatches();
 		};
+
+		const saveColorBtn = swatchRow.createEl("button", { cls: "habit-tracker-save-color-btn", text: "💾" });
+		saveColorBtn.type = "button";
+		saveColorBtn.setAttr("aria-label", "Save this color to your presets");
+		saveColorBtn.onclick = () => {
+			const c = colorWheel.value;
+			if (PALETTE.includes(c) || this.plugin.data.customColors.includes(c)) {
+				new Notice("That color is already saved.");
+				return;
+			}
+			this.plugin.data.customColors.push(c);
+			this.plugin.persist();
+			renderSwatch(c, true);
+		};
+
+		PALETTE.forEach((c) => renderSwatch(c, false));
+		this.plugin.data.customColors.forEach((c) => renderSwatch(c, true));
 
 		const typeSetting = new Setting(contentEl).setName("Type").addDropdown((dd) => {
 			dd.addOption("build", "Build (start a habit)");
@@ -767,7 +803,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			addCard.createSpan({ text: "+", cls: "habit-tracker-add-icon" });
 			addCard.createSpan({ text: "Add habit", cls: "habit-tracker-add-label" });
 			addCard.onclick = () => {
-				new HabitFormModal(this.plugin.app, {
+				new HabitFormModal(this.plugin.app, this.plugin, {
 					title: "New habit",
 					submitLabel: "Add habit",
 					onSubmit: async (values) => {
@@ -835,7 +871,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const editBtn = statsRow.createSpan({ text: "✏️", cls: "habit-tracker-edit-btn" });
 		editBtn.setAttr("aria-label", "Edit habit");
 		editBtn.onclick = () => {
-			new HabitFormModal(this.plugin.app, {
+			new HabitFormModal(this.plugin.app, this.plugin, {
 				title: "Edit habit",
 				submitLabel: "Save",
 				initial: habit,
@@ -1108,7 +1144,9 @@ function mergeData(local: PluginData, remote: PluginData): PluginData {
 		entries[id] = { ...(remote.entries[id] || {}), ...(local.entries[id] || {}) };
 	}
 
-	return { habits: Array.from(habitsById.values()), entries };
+	const customColors = Array.from(new Set([...(remote.customColors ?? []), ...(local.customColors ?? [])]));
+
+	return { habits: Array.from(habitsById.values()), entries, customColors };
 }
 
 export default class HabitTrackerPlugin extends Plugin {
@@ -1125,6 +1163,7 @@ export default class HabitTrackerPlugin extends Plugin {
 		this.data = {
 			habits: saved?.habits ?? DEFAULT_DATA.habits,
 			entries: saved?.entries ?? DEFAULT_DATA.entries,
+			customColors: saved?.customColors ?? DEFAULT_DATA.customColors,
 		};
 
 		this.addSettingTab(new HabitTrackerSettingTab(this.app, this));
@@ -1150,7 +1189,11 @@ export default class HabitTrackerPlugin extends Plugin {
 			window.setInterval(async () => {
 				const onDisk = await this.loadData();
 				if (!onDisk) return;
-				const onDiskData: PluginData = { habits: onDisk.habits ?? [], entries: onDisk.entries ?? {} };
+				const onDiskData: PluginData = {
+					habits: onDisk.habits ?? [],
+					entries: onDisk.entries ?? {},
+					customColors: onDisk.customColors ?? [],
+				};
 				if (JSON.stringify(onDiskData) !== JSON.stringify(this.data)) {
 					this.data = onDiskData;
 					this.refreshAll();
@@ -1254,7 +1297,11 @@ export default class HabitTrackerPlugin extends Plugin {
 				},
 				(payload) => {
 					const incoming = payload.new.data as PluginData;
-					this.data = { habits: incoming.habits ?? [], entries: incoming.entries ?? {} };
+					this.data = {
+						habits: incoming.habits ?? [],
+						entries: incoming.entries ?? {},
+						customColors: incoming.customColors ?? [],
+					};
 					this.saveLocal();
 					this.refreshAll();
 				}
@@ -1263,7 +1310,12 @@ export default class HabitTrackerPlugin extends Plugin {
 	}
 
 	async saveLocal() {
-		await this.saveData({ settings: this.settings, habits: this.data.habits, entries: this.data.entries });
+		await this.saveData({
+			settings: this.settings,
+			habits: this.data.habits,
+			entries: this.data.entries,
+			customColors: this.data.customColors,
+		});
 	}
 
 	// The single write path for every mutation (add/edit/delete habit,
