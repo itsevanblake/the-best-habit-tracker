@@ -128,30 +128,64 @@ function burstConfetti(card: HTMLElement, originEl: HTMLElement, habitColor: str
 	}
 }
 
-// A short ascending three-note chime synthesized with the Web Audio API —
-// no bundled audio asset needed. Fails silently if audio is unavailable
-// (e.g. blocked by the OS/browser) since the visual celebration still
-// carries the moment on its own.
-function playCelebrationSound() {
+// Streak milestones — both the Notice+pill-flash celebration in
+// maybeCelebrate() and the "crazy nice" sound variant below key off this
+// same list, so the two stay in sync.
+const MILESTONES = [7, 30, 60, 100, 365];
+
+// One synthesized note via the Web Audio API — the shared building block
+// for both the daily chime and the milestone fanfare below.
+function playTone(ctx: AudioContext, freq: number, start: number, duration: number, peakGain: number) {
+	const osc = ctx.createOscillator();
+	const gain = ctx.createGain();
+	osc.type = "sine";
+	osc.frequency.value = freq;
+	gain.gain.setValueAtTime(0, start);
+	gain.gain.linearRampToValueAtTime(peakGain, start + 0.02);
+	gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+	osc.connect(gain);
+	gain.connect(ctx.destination);
+	osc.start(start);
+	osc.stop(start + duration + 0.05);
+}
+
+// The check-off chime. No bundled audio asset needed — everything is
+// synthesized. Fails silently if audio is unavailable (e.g. blocked by the
+// OS/browser) since the confetti still carries the moment on its own.
+//
+// Non-milestone days: a quick two-note chime whose pitch climbs with the
+// streak through a 7-day cycle (day 1 lowest, day 7 highest — a full major
+// scale step per day), then resets back down for the next week, so it
+// keeps climbing "sexier" all week without ever fully maxing out into
+// something unpleasant.
+//
+// Milestone days (7/30/60/100/365, shared with maybeCelebrate()): a bigger
+// "crazy nice" fanfare — an ascending run into a full bright chord —
+// instead of the plain daily chime.
+function playCelebrationChime(streak: number, isMilestone: boolean) {
 	try {
 		const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 		const ctx = new AudioCtx();
 		const now = ctx.currentTime;
-		[523.25, 659.25, 783.99].forEach((freq, i) => {
-			const osc = ctx.createOscillator();
-			const gain = ctx.createGain();
-			osc.type = "sine";
-			osc.frequency.value = freq;
-			const start = now + i * 0.08;
-			gain.gain.setValueAtTime(0, start);
-			gain.gain.linearRampToValueAtTime(0.15, start + 0.02);
-			gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.25);
-			osc.connect(gain);
-			gain.connect(ctx.destination);
-			osc.start(start);
-			osc.stop(start + 0.3);
-		});
-		window.setTimeout(() => ctx.close(), 600);
+		const baseFreq = 523.25; // C5
+		const semitone = (n: number) => baseFreq * Math.pow(2, n / 12);
+
+		if (!isMilestone) {
+			// Major scale, one step per day of the current 7-day cycle.
+			const majorScaleSteps = [0, 2, 4, 5, 7, 9, 11];
+			const dayInWeek = (streak - 1) % 7;
+			const root = semitone(majorScaleSteps[dayInWeek]);
+			playTone(ctx, root, now, 0.22, 0.12);
+			playTone(ctx, root * Math.pow(2, 4 / 12), now + 0.06, 0.22, 0.1);
+			window.setTimeout(() => ctx.close(), 500);
+			return;
+		}
+
+		const run = [0, 4, 7, 12, 16, 19];
+		run.forEach((semi, i) => playTone(ctx, semitone(semi), now + i * 0.06, 0.3, 0.13));
+		const chordStart = now + run.length * 0.06 + 0.05;
+		[0, 4, 7, 12].forEach((semi) => playTone(ctx, semitone(semi), chordStart, 0.6, 0.14));
+		window.setTimeout(() => ctx.close(), 1200);
 	} catch {
 		// Web Audio unsupported/blocked — the confetti still plays.
 	}
@@ -1569,14 +1603,14 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.addClass(doneCls);
 			if (next === "min") cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
 			cell.addClass("habit-tracker-cell-pop");
+			const newStreak = computeStats(entries).streak;
 			if (this.plugin.settings.celebrationEffectsEnabled) {
 				const card = cell.closest<HTMLElement>(".habit-tracker-habit");
 				if (card) burstConfetti(card, cell, habit.color);
-				playCelebrationSound();
+				playCelebrationChime(newStreak, MILESTONES.includes(newStreak));
 			}
 			window.setTimeout(() => {
 				this.plugin.refreshAll();
-				const newStreak = computeStats(entries).streak;
 				this.plugin.maybeCelebrate(habit, oldStreak, newStreak);
 			}, 160);
 		};
@@ -1812,8 +1846,7 @@ export default class HabitTrackerPlugin extends Plugin {
 	// heatmap for crossing a real milestone, since delayed real-world
 	// payoffs are exactly what habit tracking is meant to compensate for.
 	maybeCelebrate(habit: HabitDefinition, oldStreak: number, newStreak: number) {
-		const milestones = [7, 30, 60, 100, 365];
-		for (const m of milestones) {
+		for (const m of MILESTONES) {
 			if (oldStreak < m && newStreak >= m) {
 				const label = habit.type === "break" ? "clean streak" : "day streak";
 				new Notice(`🎉 ${newStreak}-${label} on "${habit.name}"! Keep going.`);
