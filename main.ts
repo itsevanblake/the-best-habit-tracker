@@ -172,6 +172,19 @@ function leversToText(v: HabitLevers): string {
 	].join("\n");
 }
 
+// Shown, pre-filled, in the levers box for a brand-new habit (nothing set
+// yet) so the format is demonstrated with a real example rather than bare
+// labels. The box auto-selects its own text on open (see HabitFormModal),
+// so the first keystroke naturally replaces this rather than risking it
+// getting submitted verbatim.
+const EXAMPLE_LEVERS: HabitLevers = {
+	identity: "I am someone who takes care of my body",
+	stackedAfter: "I brush my teeth in the morning",
+	whenWhere: "7am, in my bedroom",
+	minimumVersion: "Just put on my running shoes",
+	linkedGoal: "2026-Q3",
+};
+
 function parseLevers(text: string): HabitLevers {
 	const result: HabitLevers = { identity: "", stackedAfter: "", whenWhere: "", minimumVersion: "", linkedGoal: "" };
 	const lineRe = /^\s*(identity|stack|when\/where|when|minimum(?:\s*version)?|linked\s*goal|goal)\s*:\s*(.*)$/i;
@@ -200,10 +213,12 @@ interface HabitFormOptions {
 class HabitFormModal extends Modal {
 	opts: HabitFormOptions;
 	values: HabitFormValues;
+	isNew: boolean;
 
 	constructor(app: App, opts: HabitFormOptions) {
 		super(app);
 		this.opts = opts;
+		this.isNew = !opts.initial;
 		this.values = {
 			name: opts.initial?.name ?? "",
 			color: opts.initial?.color ?? PALETTE[0],
@@ -263,15 +278,20 @@ class HabitFormModal extends Modal {
 		contentEl.createEl("h4", { text: "Optional — Atomic Habits levers" });
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
-			text: "Fill in whichever lines are useful; leave the rest blank. Keep the labels as-is — that's how it gets read back out.",
+			text: this.isNew
+				? "Pre-filled with an example — it's selected, so just start typing to replace it, or edit/delete individual lines. Keep the labels as-is."
+				: "Fill in whichever lines are useful; leave the rest blank. Keep the labels as-is — that's how it gets read back out.",
 		});
 
 		const leversBox = contentEl.createEl("textarea", { cls: "habit-tracker-levers-box" });
-		leversBox.value = leversToText(this.values);
+		leversBox.value = leversToText(this.isNew ? EXAMPLE_LEVERS : this.values);
 		leversBox.rows = 5;
 		leversBox.addEventListener("input", () => {
 			Object.assign(this.values, parseLevers(leversBox.value));
 		});
+		if (this.isNew) {
+			window.setTimeout(() => leversBox.select(), 0);
+		}
 
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
 		const submitBtn = footer.createEl("button", { text: this.opts.submitLabel, cls: "mod-cta" });
