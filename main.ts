@@ -262,12 +262,14 @@ class HabitFormModal extends Modal {
 			{ label: "Goal", key: "linkedGoal", example: EXAMPLE_LEVERS.linkedGoal },
 		];
 		for (const row of leverRows) {
-			new Setting(contentEl).setName(row.label).addText((text) => {
+			const setting = new Setting(contentEl).setName(row.label).addText((text) => {
 				if (this.isNew) text.setPlaceholder(row.example);
 				text.setValue(this.values[row.key]).onChange((v) => {
 					this.values[row.key] = v;
 				});
+				text.inputEl.addClass("habit-tracker-lever-input");
 			});
+			setting.settingEl.addClass("habit-tracker-lever-setting");
 		}
 
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
