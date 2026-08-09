@@ -206,7 +206,7 @@ const EXAMPLE_LEVERS: HabitLevers = {
 	minimumVersion: "Open my workspace dashboard and check off exactly one high-priority task",
 	reward: "Immediately check my visual streak counter",
 	identity: "I am someone who follows through on what matters most",
-	linkedGoal: "2026-Q3",
+	linkedGoal: "Run a sub-4-hour marathon by December 2026",
 };
 
 // Definitions grounded directly in James Clear's Atomic Habits framework,
@@ -242,7 +242,7 @@ const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: str
 	linkedGoal: {
 		term: "Systems Over Goals",
 		definition:
-			'Clear: "You do not rise to the level of your goals. You fall to the level of your systems." A habit is the system — this links it to the goal it actually serves.',
+			'Clear: "You do not rise to the level of your goals. You fall to the level of your systems." "A goal tells you where you\'re going. A system gets you there." A habit is the system — this links it to the goal it actually serves.',
 	},
 };
 
@@ -591,7 +591,7 @@ class HabitFormModal extends Modal {
 			},
 			{
 				title: `3. ${LEVER_TERM_INFO.linkedGoal.term}`,
-				body: `${LEVER_TERM_INFO.linkedGoal.definition} Try: "${EXAMPLE_LEVERS.linkedGoal}"`,
+				body: `${LEVER_TERM_INFO.linkedGoal.definition} eg: "${EXAMPLE_LEVERS.linkedGoal}"`,
 				target: lever("linkedGoal").setting.settingEl,
 				focusEl: lever("linkedGoal").textareaEl,
 			},
