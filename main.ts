@@ -38,9 +38,12 @@ const DEFAULT_DATA: PluginData = { habits: [], entries: {}, customColors: [], ha
 interface PluginSettings {
 	supabaseUrl: string;
 	supabaseAnonKey: string;
+	// Local-only (not synced via Supabase) since sound/confetti is a
+	// per-device preference, not habit data.
+	celebrationEffectsEnabled: boolean;
 }
 
-const DEFAULT_SETTINGS: PluginSettings = { supabaseUrl: "", supabaseAnonKey: "" };
+const DEFAULT_SETTINGS: PluginSettings = { supabaseUrl: "", supabaseAnonKey: "", celebrationEffectsEnabled: true };
 
 // A cohesive, vibrant set (consistent saturation/lightness rather than a
 // mixed bag of muddy and bright tones) that reads well in both light and
@@ -99,6 +102,59 @@ function contrastColor(hex: string): string {
 	if ([r, g, b].some((n) => Number.isNaN(n))) return "#ffffff";
 	const yiq = (r * 299 + g * 587 + b * 114) / 1000;
 	return yiq >= 150 ? "#1a1a1a" : "#ffffff";
+}
+
+// A small confetti burst radiating out from the cell that was just checked
+// off, contained within the habit card (card needs position: relative,
+// already set in styles.css). Pure CSS animation driven by per-piece custom
+// properties — no external assets/libraries.
+function burstConfetti(card: HTMLElement, originEl: HTMLElement, habitColor: string) {
+	const cardRect = card.getBoundingClientRect();
+	const originRect = originEl.getBoundingClientRect();
+	const originX = originRect.left + originRect.width / 2 - cardRect.left;
+	const originY = originRect.top + originRect.height / 2 - cardRect.top;
+	const colors = [habitColor, "#ffd166", "#06d6a0", "#ef476f", "#118ab2"];
+	for (let i = 0; i < 14; i++) {
+		const piece = card.createDiv({ cls: "habit-tracker-confetti-piece" });
+		const angle = Math.random() * Math.PI * 2;
+		const distance = 40 + Math.random() * 50;
+		piece.style.left = `${originX}px`;
+		piece.style.top = `${originY}px`;
+		piece.style.setProperty("--tx", `${Math.cos(angle) * distance}px`);
+		piece.style.setProperty("--ty", `${Math.sin(angle) * distance - 20}px`);
+		piece.style.setProperty("--rot", `${Math.random() * 360}deg`);
+		piece.style.backgroundColor = colors[i % colors.length];
+		window.setTimeout(() => piece.remove(), 700);
+	}
+}
+
+// A short ascending three-note chime synthesized with the Web Audio API —
+// no bundled audio asset needed. Fails silently if audio is unavailable
+// (e.g. blocked by the OS/browser) since the visual celebration still
+// carries the moment on its own.
+function playCelebrationSound() {
+	try {
+		const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+		const ctx = new AudioCtx();
+		const now = ctx.currentTime;
+		[523.25, 659.25, 783.99].forEach((freq, i) => {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			osc.type = "sine";
+			osc.frequency.value = freq;
+			const start = now + i * 0.08;
+			gain.gain.setValueAtTime(0, start);
+			gain.gain.linearRampToValueAtTime(0.15, start + 0.02);
+			gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.25);
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.start(start);
+			osc.stop(start + 0.3);
+		});
+		window.setTimeout(() => ctx.close(), 600);
+	} catch {
+		// Web Audio unsupported/blocked — the confetti still plays.
+	}
 }
 
 // Grows a textarea's height to fit its content instead of leaving it a
@@ -1000,6 +1056,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	// re-renders (every click triggers a full rebuild via refreshAll,
 	// which would otherwise reset scroll back to January every time).
 	yearScrollByHabit: Map<string, number> = new Map();
+	// Set while the "🎓 Habit Creation Walkthrough" toolbar button is
+	// pointing at the "+ Add habit" card, waiting for the user to click it
+	// before the actual form walkthrough begins.
+	pendingWalkthroughIntro = false;
 
 	constructor(
 		containerEl: HTMLElement,
@@ -1042,15 +1102,16 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			: data.habits;
 
 		const toggleRow = el.createDiv({ cls: "habit-tracker-global-toggle-row" });
+		const leftGroup = toggleRow.createDiv({ cls: "habit-tracker-toggle-row-left" });
 		if (!this.filterName) {
-			const walkthroughBtn = toggleRow.createEl("button", {
+			const walkthroughBtn = leftGroup.createEl("button", {
 				text: "🎓 Habit Creation Walkthrough",
 				cls: "habit-tracker-walkthrough-btn",
 			});
 			walkthroughBtn.type = "button";
-			walkthroughBtn.onclick = () => this.openAddHabitModal(true);
+			walkthroughBtn.onclick = () => this.showAddHabitIntro();
 		}
-		const toggle = toggleRow.createDiv({ cls: "habit-tracker-view-toggle" });
+		const toggle = leftGroup.createDiv({ cls: "habit-tracker-view-toggle" });
 		const modeLabels: Record<ViewMode, string> = { week: "Week", month: "Month", year: "Year", yeardays: "Year - Days" };
 		(["week", "month", "year", "yeardays"] as ViewMode[]).forEach((mode) => {
 			const b = toggle.createEl("button", {
@@ -1062,6 +1123,13 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.render();
 			};
 		});
+
+		if (!this.filterName) {
+			const gearBtn = toggleRow.createEl("button", { text: "⚙️", cls: "habit-tracker-gear-btn" });
+			gearBtn.type = "button";
+			gearBtn.setAttr("aria-label", "Settings");
+			gearBtn.onclick = () => this.toggleSettingsPanel(gearBtn);
+		}
 
 		if (habits.length === 0 && !this.filterName) {
 			const empty = el.createDiv({ cls: "habit-tracker-empty" });
@@ -1086,7 +1154,15 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			const addCard = list.createDiv({ cls: "habit-tracker-add-card" });
 			addCard.createSpan({ text: "+", cls: "habit-tracker-add-icon" });
 			addCard.createSpan({ text: "Add habit", cls: "habit-tracker-add-label" });
-			addCard.onclick = () => this.openAddHabitModal(!this.plugin.data.hasCreatedFirstHabit);
+			addCard.onclick = () => {
+				const fromIntro = this.pendingWalkthroughIntro;
+				if (fromIntro) {
+					this.pendingWalkthroughIntro = false;
+					this.containerEl.querySelector(".habit-tracker-add-card")?.removeClass("habit-tracker-walkthrough-highlight");
+					this.containerEl.querySelector(".habit-tracker-block-walkthrough-tooltip")?.remove();
+				}
+				this.openAddHabitModal(fromIntro || !this.plugin.data.hasCreatedFirstHabit);
+			};
 		}
 	}
 
@@ -1116,6 +1192,73 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.plugin.refreshAll();
 			},
 		}).open();
+	}
+
+	// The toolbar walkthrough button doesn't jump straight into the form —
+	// it first points at the "+ Add habit" card and waits for the user to
+	// click it themselves, same as anyone discovering the feature would.
+	// The actual form walkthrough (startWalkthrough() in HabitFormModal)
+	// only begins once that click happens (see addCard.onclick above).
+	showAddHabitIntro() {
+		const addCard = this.containerEl.querySelector<HTMLElement>(".habit-tracker-add-card");
+		if (!addCard) return;
+		this.containerEl.querySelector(".habit-tracker-block-walkthrough-tooltip")?.remove();
+
+		this.pendingWalkthroughIntro = true;
+		addCard.addClass("habit-tracker-walkthrough-highlight");
+		addCard.scrollIntoView({ block: "center", behavior: "smooth" });
+
+		const tooltip = this.containerEl.createDiv({ cls: "habit-tracker-walkthrough-tooltip habit-tracker-block-walkthrough-tooltip" });
+		tooltip.createDiv({ text: "👇 Click \"+ Add habit\" below to start", cls: "habit-tracker-walkthrough-title" });
+		const dismissBtn = tooltip.createEl("button", { text: "Never mind", cls: "habit-tracker-walkthrough-skip" });
+		dismissBtn.type = "button";
+		dismissBtn.onclick = () => {
+			this.pendingWalkthroughIntro = false;
+			addCard.removeClass("habit-tracker-walkthrough-highlight");
+			tooltip.remove();
+		};
+
+		window.setTimeout(() => {
+			const rootRect = this.containerEl.getBoundingClientRect();
+			const cardRect = addCard.getBoundingClientRect();
+			tooltip.style.top = `${cardRect.bottom - rootRect.top + 8}px`;
+			tooltip.style.left = `${Math.max(0, cardRect.left - rootRect.left)}px`;
+		}, 50);
+	}
+
+	// A single-checkbox popover anchored under the gear button, rather than
+	// a full settings tab, since there's exactly one preference to expose
+	// here (celebration effects on/off).
+	toggleSettingsPanel(gearBtn: HTMLElement) {
+		const existing = this.containerEl.querySelector(".habit-tracker-settings-panel");
+		if (existing) {
+			existing.remove();
+			return;
+		}
+		const panel = this.containerEl.createDiv({ cls: "habit-tracker-settings-panel" });
+		const label = panel.createEl("label", { cls: "habit-tracker-settings-row" });
+		const checkbox = label.createEl("input");
+		checkbox.type = "checkbox";
+		checkbox.checked = this.plugin.settings.celebrationEffectsEnabled;
+		label.createSpan({ text: "🎉 Celebrate when marking a habit (confetti + sound)" });
+		checkbox.onchange = async () => {
+			this.plugin.settings.celebrationEffectsEnabled = checkbox.checked;
+			await this.plugin.saveSettings();
+		};
+
+		const closeOnOutsideClick = (e: MouseEvent) => {
+			if (panel.contains(e.target as Node) || gearBtn.contains(e.target as Node)) return;
+			panel.remove();
+			document.removeEventListener("click", closeOnOutsideClick, true);
+		};
+		window.setTimeout(() => document.addEventListener("click", closeOnOutsideClick, true), 0);
+
+		window.setTimeout(() => {
+			const rootRect = this.containerEl.getBoundingClientRect();
+			const btnRect = gearBtn.getBoundingClientRect();
+			panel.style.top = `${btnRect.bottom - rootRect.top + 6}px`;
+			panel.style.right = `${rootRect.right - btnRect.right}px`;
+		}, 0);
 	}
 
 	renderHabit(parentEl: HTMLElement, habit: HabitDefinition) {
@@ -1422,6 +1565,11 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.addClass(doneCls);
 			if (next === "min") cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
 			cell.addClass("habit-tracker-cell-pop");
+			if (this.plugin.settings.celebrationEffectsEnabled) {
+				const card = cell.closest<HTMLElement>(".habit-tracker-habit");
+				if (card) burstConfetti(card, cell, habit.color);
+				playCelebrationSound();
+			}
 			window.setTimeout(() => {
 				this.plugin.refreshAll();
 				const newStreak = computeStats(entries).streak;

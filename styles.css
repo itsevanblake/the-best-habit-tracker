@@ -40,6 +40,7 @@ body.theme-dark {
    Obsidian's own variable for this padding; the fallback keeps this a
    no-op if a given theme/version doesn't define it. */
 .habit-tracker-root {
+	position: relative;
 	margin: 1.2em calc(-1 * var(--file-margins, 0px));
 	padding: 0 12px;
 	font-variant-numeric: tabular-nums;
@@ -105,6 +106,58 @@ body.theme-dark {
 	margin-bottom: 10px;
 }
 
+.habit-tracker-toggle-row-left {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.habit-tracker-gear-btn {
+	flex-shrink: 0;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ht-radius-md);
+	background-color: var(--background-secondary);
+	cursor: pointer;
+	font-size: 0.95em;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.habit-tracker-gear-btn:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
+.habit-tracker-settings-panel {
+	position: absolute;
+	z-index: 3;
+	padding: var(--ht-space-3);
+	border-radius: var(--ht-radius-lg);
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: var(--ht-shadow-md);
+}
+
+.habit-tracker-settings-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	font-size: 0.85em;
+	white-space: nowrap;
+}
+
+.habit-tracker-settings-row input[type="checkbox"] {
+	cursor: pointer;
+	accent-color: var(--interactive-accent);
+}
+
 .habit-tracker-walkthrough-btn {
 	font-size: 0.78em;
 	font-weight: 500;
@@ -166,6 +219,8 @@ body.theme-dark {
 /* ---- Habit card ---- */
 
 .habit-tracker-habit {
+	position: relative;
+	overflow: hidden;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--ht-radius-xl);
 	padding: 20px 22px 22px;
@@ -426,6 +481,32 @@ body.theme-dark {
 
 .habit-tracker-cell-pop {
 	animation: habit-tracker-pop 0.28s ease-out;
+}
+
+/* Confetti burst, radiating from the checked-off cell, contained within
+   the card (see overflow: hidden on .habit-tracker-habit). Position/color
+   are set inline per piece in burstConfetti(); the shared keyframe just
+   animates translate/rotate/fade toward those per-piece custom
+   properties. */
+@keyframes habit-tracker-confetti {
+	0% {
+		transform: translate(0, 0) rotate(0deg);
+		opacity: 1;
+	}
+	100% {
+		transform: translate(var(--tx), var(--ty)) rotate(var(--rot));
+		opacity: 0;
+	}
+}
+
+.habit-tracker-confetti-piece {
+	position: absolute;
+	width: 6px;
+	height: 6px;
+	border-radius: 1px;
+	pointer-events: none;
+	z-index: 5;
+	animation: habit-tracker-confetti 0.6s ease-out forwards;
 }
 
 .habit-tracker-cell-future {
@@ -1118,6 +1199,18 @@ body.theme-dark {
 
 .habit-tracker-walkthrough-skip:hover {
 	color: var(--text-normal);
+}
+
+/* The block-level "click + Add habit" intro reuses the modal tooltip's
+   look, but sits inside .habit-tracker-root (position: relative) instead
+   of a modal, and only ever has the one dismiss button. */
+.habit-tracker-block-walkthrough-tooltip {
+	z-index: 3;
+}
+
+.habit-tracker-block-walkthrough-tooltip .habit-tracker-walkthrough-skip {
+	margin: 8px 0 0;
+	padding: 0;
 }
 
 .habit-tracker-walkthrough-congrats {
