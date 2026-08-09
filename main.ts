@@ -226,6 +226,25 @@ const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: str
 	},
 };
 
+const LEVER_LABELS: Record<keyof HabitLevers, string> = {
+	identity: "Identity",
+	stackedAfter: "Stack",
+	whenWhere: "When/Where",
+	minimumVersion: "Minimum",
+	linkedGoal: "Goal",
+};
+
+// Short, concrete "why this helps" used in the validation Notice when a
+// field is left blank — distinct from the fuller definitions in
+// LEVER_TERM_INFO, which live in the "?" help toggles.
+const LEVER_HELP_REASON: Record<keyof HabitLevers, string> = {
+	identity: "naming who you're becoming is what actually makes a habit stick",
+	stackedAfter: "anchoring it to a habit you already do makes the cue impossible to miss",
+	whenWhere: 'a specific time and place beats a vague "someday"',
+	minimumVersion: "a tiny fallback version keeps your streak alive on hard days",
+	linkedGoal: "connecting it to what it's actually for keeps the system pointed at something real",
+};
+
 const TYPE_INFO = {
 	term: "Build vs. Break",
 	definition:
@@ -369,7 +388,7 @@ class HabitFormModal extends Modal {
 		});
 		addHelpToggle(typeSetting, contentEl, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
 
-		contentEl.createEl("h4", { text: this.isNew ? "Required — Atomic Habits levers" : "Optional — Atomic Habits levers" });
+		contentEl.createEl("h4", { text: "Atomic Habits levers" });
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
 			text: this.isNew
@@ -458,16 +477,11 @@ class HabitFormModal extends Modal {
 			return;
 		}
 		if (this.isNew) {
-			const required: [string, string][] = [
-				[this.values.identity, "Identity"],
-				[this.values.stackedAfter, "Stack"],
-				[this.values.whenWhere, "When/Where"],
-				[this.values.minimumVersion, "Minimum"],
-				[this.values.linkedGoal, "Goal"],
-			];
-			for (const [value, label] of required) {
-				if (!value.trim()) {
-					new Notice(`"${label}" is required to create a new habit.`);
+			const verb = this.values.type === "break" ? "breaking" : "building";
+			const requiredKeys: (keyof HabitLevers)[] = ["identity", "stackedAfter", "whenWhere", "minimumVersion", "linkedGoal"];
+			for (const key of requiredKeys) {
+				if (!this.values[key].trim()) {
+					new Notice(`Fill out "${LEVER_LABELS[key]}" — ${LEVER_HELP_REASON[key]}, which will help you with ${verb} this habit.`);
 					return;
 				}
 			}

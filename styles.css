@@ -484,6 +484,18 @@
 	flex-grow: 1;
 }
 
+/* Labels differ in length ("When/Where" vs "Goal"), which would otherwise
+   leave each row's textarea starting at a different x-position. A fixed
+   label column width lines every box up on the same left edge. */
+.habit-tracker-lever-setting .setting-item-info {
+	flex: 0 0 130px;
+	width: 130px;
+}
+
+.habit-tracker-lever-setting {
+	align-items: flex-start;
+}
+
 .habit-tracker-lever-input {
 	width: 100%;
 	min-height: 2.2em;
