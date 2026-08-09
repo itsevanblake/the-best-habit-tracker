@@ -171,12 +171,15 @@ function playCelebrationChime(streak: number, isMilestone: boolean) {
 		const semitone = (n: number) => baseFreq * Math.pow(2, n / 12);
 
 		if (!isMilestone) {
-			// Major scale, one step per day of the current 7-day cycle.
-			const majorScaleSteps = [0, 2, 4, 5, 7, 9, 11];
+			// One step per day of the current 7-day cycle, spread across a
+			// full octave (day 1 lowest, day 7 exactly an octave up) instead
+			// of a single scale step per day — makes the day-to-day climb
+			// unmistakable rather than subtle.
+			const daySteps = [0, 2, 4, 5, 7, 9, 12];
 			const dayInWeek = (streak - 1) % 7;
-			const root = semitone(majorScaleSteps[dayInWeek]);
-			playTone(ctx, root, now, 0.22, 0.12);
-			playTone(ctx, root * Math.pow(2, 4 / 12), now + 0.06, 0.22, 0.1);
+			const root = semitone(daySteps[dayInWeek]);
+			playTone(ctx, root, now, 0.22, 0.14);
+			playTone(ctx, root * Math.pow(2, 4 / 12), now + 0.06, 0.22, 0.11);
 			window.setTimeout(() => ctx.close(), 500);
 			return;
 		}
