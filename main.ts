@@ -242,7 +242,7 @@ const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: str
 	linkedGoal: {
 		term: "Systems Over Goals",
 		definition:
-			'Clear: "You do not rise to the level of your goals. You fall to the level of your systems." "A goal tells you where you\'re going. A system gets you there." A habit is the system — this links it to the goal it actually serves.',
+			"Clear: \"You do not rise to the level of your goals. You fall to the level of your systems.\" A goal tells you where you're going. A system gets you there. A habit is the system — this links it to the goal it actually serves.",
 	},
 };
 
