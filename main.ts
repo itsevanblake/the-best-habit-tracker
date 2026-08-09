@@ -774,9 +774,10 @@ class HabitFormModal extends Modal {
 				return;
 			}
 		}
+		const name = this.values.name.trim();
 		this.opts.onSubmit({
 			...this.values,
-			name: this.values.name.trim(),
+			name,
 			identity: this.values.identity.trim(),
 			stackedAfter: this.values.stackedAfter.trim(),
 			craving: this.values.craving.trim(),
@@ -784,7 +785,31 @@ class HabitFormModal extends Modal {
 			reward: this.values.reward.trim(),
 			linkedGoal: this.values.linkedGoal.trim(),
 		});
-		this.close();
+		if (this.opts.walkthrough) {
+			this.showCongrats(name);
+		} else {
+			this.close();
+		}
+	}
+
+	// Shown in place of closing immediately, only when the habit was just
+	// created via the walkthrough — the one moment it's worth pausing on
+	// before handing the user back to the tracker.
+	showCongrats(habitName: string) {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass("habit-tracker-walkthrough-congrats");
+		contentEl.createEl("h3", { text: "🎉 You just built your first habit!" });
+		contentEl.createEl("p", {
+			text: `"${habitName}" is live, and you've filled in the whole loop for it — the trigger, the craving, the routine, and the reward.`,
+		});
+		contentEl.createEl("p", {
+			text: "The only thing left is showing up. Keep coming back to the tracker, check it off, and protect your streak — small, consistent reps are what actually compound into the person you're becoming.",
+		});
+		const doneBtn = contentEl.createEl("button", { text: "Let's go", cls: "mod-cta" });
+		doneBtn.type = "button";
+		doneBtn.onclick = () => this.close();
+		window.setTimeout(() => doneBtn.focus(), 0);
 	}
 
 	onClose() {

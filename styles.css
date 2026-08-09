@@ -941,6 +941,26 @@
 	color: var(--text-normal);
 }
 
+.habit-tracker-walkthrough-congrats {
+	text-align: center;
+	padding: 12px 4px 4px;
+}
+
+.habit-tracker-walkthrough-congrats h3 {
+	margin-top: 0;
+	font-size: 1.3em;
+}
+
+.habit-tracker-walkthrough-congrats p {
+	color: var(--text-muted);
+	line-height: 1.5;
+	margin: 0 0 14px;
+}
+
+.habit-tracker-walkthrough-congrats button {
+	margin-top: 6px;
+}
+
 @media (hover: none) {
 	.habit-tracker-walkthrough-tooltip {
 		width: min(340px, calc(100% - 16px));
