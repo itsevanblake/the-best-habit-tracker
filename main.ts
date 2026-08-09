@@ -805,6 +805,17 @@ class HabitFormModal extends Modal {
 			const left = Math.min(Math.max(0, targetRect.left - contentRect.left), maxLeft);
 			tooltip.style.top = `${top}px`;
 			tooltip.style.left = `${left}px`;
+
+			// scrollIntoView on the highlighted field alone doesn't account
+			// for the tooltip rendered just below it — on a tall step near
+			// the bottom of the form, the field could end up centered while
+			// the tooltip explaining it spills past the visible edge.
+			// Nudge the extra distance into view too.
+			const tooltipBottom = top + tooltip.offsetHeight;
+			const visibleBottom = contentEl.scrollTop + contentEl.clientHeight;
+			if (tooltipBottom > visibleBottom) {
+				contentEl.scrollBy({ top: tooltipBottom - visibleBottom + 12, behavior: "smooth" });
+			}
 		};
 
 		const endWalkthrough = () => {
@@ -913,7 +924,11 @@ class HabitFormModal extends Modal {
 		}
 
 		contentEl.addClass("habit-tracker-walkthrough-active");
-		showStep(0);
+		// A short delay before the very first step, so scrollIntoView's
+		// measurements land after Obsidian's modal-open animation has
+		// settled instead of mid-transition (where the modal's own size/
+		// position is still changing, throwing off where "the field" is).
+		window.setTimeout(() => showStep(0), 50);
 	}
 
 	updateCommitLabel() {
