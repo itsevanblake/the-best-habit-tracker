@@ -639,12 +639,15 @@
 
 .habit-tracker-swatch-row {
 	display: flex;
-	gap: 10px;
+	flex-wrap: wrap;
+	row-gap: 8px;
+	column-gap: 10px;
 	padding: 4px 0 8px;
 }
 
 .habit-tracker-swatch {
 	position: relative;
+	flex-shrink: 0;
 	width: 26px;
 	height: 26px;
 	border-radius: 50%;
@@ -680,6 +683,7 @@
 }
 
 .habit-tracker-save-color-btn {
+	flex-shrink: 0;
 	width: 26px;
 	height: 26px;
 	padding: 0;
@@ -698,6 +702,7 @@
 }
 
 .habit-tracker-color-wheel {
+	flex-shrink: 0;
 	width: 26px;
 	height: 26px;
 	padding: 0;

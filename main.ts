@@ -326,7 +326,7 @@ interface HabitFormOptions {
 
 interface WalkthroughStep {
 	title: string;
-	body: string;
+	body: string | (() => string);
 	target: HTMLElement;
 	focusEl?: HTMLElement;
 }
@@ -635,7 +635,10 @@ class HabitFormModal extends Modal {
 		if (refs.commitCheckboxEl) {
 			steps.push({
 				title: "10. Commit",
-				body: "Ready to commit? Check the box below to make it official for yourself — a small, deliberate act that locks in your intention before you start.",
+				body: () => {
+					const verb = this.values.type === "break" ? "breaking" : "building";
+					return `Ready to commit? Check the box below to say "I commit to ${verb} this habit" — a small, deliberate act that locks in your intention before you start.`;
+				},
 				target: (refs.commitCheckboxEl.closest("label") as HTMLElement) ?? refs.commitCheckboxEl,
 				focusEl: refs.commitCheckboxEl,
 			});
@@ -692,7 +695,7 @@ class HabitFormModal extends Modal {
 			step.target.addClass("habit-tracker-walkthrough-highlight");
 			progressEl.setText(`Step ${stepIndex + 1} of ${steps.length}`);
 			titleEl.setText(step.title);
-			bodyEl.setText(step.body);
+			bodyEl.setText(typeof step.body === "function" ? step.body() : step.body);
 			backBtn.style.visibility = stepIndex === 0 ? "hidden" : "visible";
 			nextBtn.setText(stepIndex === steps.length - 1 ? "Got it" : "Next");
 			step.target.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -804,7 +807,7 @@ class HabitFormModal extends Modal {
 			text: `"${habitName}" is live, and you've filled in the whole loop for it — the trigger, the craving, the routine, and the reward.`,
 		});
 		contentEl.createEl("p", {
-			text: "The only thing left is showing up. Keep coming back to the tracker, check it off, and protect your streak — small, consistent reps are what actually compound into the person you're becoming.",
+			text: "The only thing left is showing up. Keep coming back to the daily tracker, check it off, and protect your streak — small, consistent reps are what actually compound into the person you're becoming.",
 		});
 		const doneBtn = contentEl.createEl("button", { text: "Let's go", cls: "mod-cta" });
 		doneBtn.type = "button";
