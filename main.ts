@@ -175,8 +175,17 @@ function playCelebrationChime(streak: number, isMilestone: boolean) {
 			// full octave (day 1 lowest, day 7 exactly an octave up) instead
 			// of a single scale step per day — makes the day-to-day climb
 			// unmistakable rather than subtle.
+			//
+			// streak can be 0 (or, in theory, negative) when the marked day
+			// doesn't chain to today — e.g. clicking a past cell in the grid
+			// that's isolated from the current streak. JS's % can return a
+			// negative result for a negative left-hand side (unlike most
+			// other languages), which would index daySteps with -1 and
+			// silently produce NaN frequencies (dead silence, no error) —
+			// clamp to at least day 1 so there's always an audible, correct
+			// tone instead.
 			const daySteps = [0, 2, 4, 5, 7, 9, 12];
-			const dayInWeek = (streak - 1) % 7;
+			const dayInWeek = (Math.max(1, streak) - 1) % 7;
 			const root = semitone(daySteps[dayInWeek]);
 			playTone(ctx, root, now, 0.22, 0.14);
 			playTone(ctx, root * Math.pow(2, 4 / 12), now + 0.06, 0.22, 0.11);
