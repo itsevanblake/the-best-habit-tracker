@@ -862,8 +862,19 @@ class HabitFormModal extends Modal {
 		// tooltip tracks whichever way the user chooses to move.
 		const bindAdvance = (el: HTMLElement | undefined, type: string, index: number, predicate?: () => boolean) => {
 			if (!el || index < 0) return;
-			el.addEventListener(type, () => {
+			el.addEventListener(type, (e: Event) => {
 				if (!active || stepIndex !== index) return;
+				// A blur fires (moving focus off the current field) the
+				// instant the user mousedowns on Skip/Back/Next — BEFORE
+				// that button's own click handler runs. Without this guard,
+				// this listener would fire showStep()'s scrollIntoView on
+				// its way to the next field a beat before endWalkthrough()
+				// (from Skip) tears the tour down, which visibly scrolls the
+				// form even though the tour is closing — reading exactly
+				// like "Skip just went to the next field" instead of
+				// closing.
+				const related = (e as FocusEvent).relatedTarget as HTMLElement | null;
+				if (related === skipBtn || related === backBtn || related === nextBtn) return;
 				if (predicate && !predicate()) return;
 				showStep(index + 1);
 			});
