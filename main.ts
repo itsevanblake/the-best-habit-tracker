@@ -399,7 +399,7 @@ class HabitFormModal extends Modal {
 		contentEl.createEl("h4", { text: "Identity & Context" });
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
-			text: "Who this habit is evidence for, the cue's specifics, and what it's actually for.",
+			text: "What identity is the evidence for, the cue's specifics, and what it's actually for.",
 		});
 		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key);
 
