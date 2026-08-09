@@ -1284,6 +1284,16 @@ body.theme-dark {
 	}
 }
 
+/* Briefly non-interactive/dimmed while the tooltip is still sitting at its
+   old screen position, mid-scroll, right after Next/Back moves to a new
+   step — prevents a click during that window from landing on a stale
+   button position. See showStep() in main.ts. */
+.habit-tracker-walkthrough-tooltip-repositioning {
+	pointer-events: none;
+	opacity: 0.4;
+	transition: opacity 0.1s ease;
+}
+
 .habit-tracker-walkthrough-progress {
 	font-size: 0.75em;
 	font-weight: 600;

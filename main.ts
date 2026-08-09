@@ -829,16 +829,33 @@ class HabitFormModal extends Modal {
 			bodyEl.setText(typeof step.body === "function" ? step.body() : step.body);
 			backBtn.style.visibility = stepIndex === 0 ? "hidden" : "visible";
 			nextBtn.setText(stepIndex === steps.length - 1 ? "Got it" : "Next");
+			// While scrollIntoView's smooth scroll (and the 150ms wait for it
+			// to settle) is in flight, the tooltip is still sitting at its
+			// OLD screen position — a click landing in that window can miss
+			// whichever button the user actually meant to hit. Make it
+			// non-interactive/dimmed for that brief stretch instead of
+			// leaving it clickable in a stale spot.
+			tooltip.addClass("habit-tracker-walkthrough-tooltip-repositioning");
 			step.target.scrollIntoView({ block: "center", behavior: "smooth" });
 			window.setTimeout(() => {
 				positionTooltip(step.target);
+				tooltip.removeClass("habit-tracker-walkthrough-tooltip-repositioning");
 				step.focusEl?.focus();
 			}, 150);
 		};
 
-		skipBtn.onclick = () => endWalkthrough();
-		backBtn.onclick = () => showStep(stepIndex - 1);
-		nextBtn.onclick = () => showStep(stepIndex + 1);
+		skipBtn.onclick = (e) => {
+			e.stopPropagation();
+			endWalkthrough();
+		};
+		backBtn.onclick = (e) => {
+			e.stopPropagation();
+			showStep(stepIndex - 1);
+		};
+		nextBtn.onclick = (e) => {
+			e.stopPropagation();
+			showStep(stepIndex + 1);
+		};
 
 		// Following along by typing/clicking/pressing Enter in the actual
 		// fields advances the tour too, not just the Next button — so the
