@@ -331,6 +331,19 @@ interface WalkthroughStep {
 	focusEl?: HTMLElement;
 }
 
+interface WalkthroughRefs {
+	nameSetting: Setting;
+	nameInputEl: HTMLInputElement;
+	leverElements: Partial<Record<keyof HabitLevers, { setting: Setting; textareaEl: HTMLTextAreaElement }>>;
+	colorSetting: Setting;
+	swatchRow: HTMLElement;
+	typeSetting: Setting;
+	typeSelectEl: HTMLSelectElement;
+	commitCheckboxEl?: HTMLInputElement;
+	footer: HTMLElement;
+	submitBtn: HTMLButtonElement;
+}
+
 class HabitFormModal extends Modal {
 	plugin: HabitTrackerPlugin;
 	opts: HabitFormOptions;
@@ -338,6 +351,7 @@ class HabitFormModal extends Modal {
 	isNew: boolean;
 	commitChecked = false;
 	commitLabelTextEl: HTMLElement;
+	walkthroughRefs?: WalkthroughRefs;
 
 	constructor(app: App, plugin: HabitTrackerPlugin, opts: HabitFormOptions) {
 		super(app);
@@ -361,6 +375,19 @@ class HabitFormModal extends Modal {
 		const { contentEl } = this;
 		contentEl.addClass("habit-tracker-modal");
 		contentEl.createEl("h3", { text: this.opts.title });
+
+		if (this.isNew && !this.opts.walkthrough) {
+			const walkthroughBtn = contentEl.createEl("button", {
+				text: "🎓 Habit Creation Walkthrough",
+				cls: "habit-tracker-walkthrough-btn habit-tracker-modal-walkthrough-btn",
+			});
+			walkthroughBtn.type = "button";
+			walkthroughBtn.onclick = () => {
+				this.opts.walkthrough = true;
+				walkthroughBtn.remove();
+				this.startWalkthrough(contentEl, this.walkthroughRefs!);
+			};
+		}
 
 		// Plain Enter moves focus to the next field in the form instead of
 		// doing its default thing (submitting, or — in a textarea —
@@ -547,8 +574,8 @@ class HabitFormModal extends Modal {
 		submitBtn.onclick = () => this.submit();
 		focusOrder.push(submitBtn);
 
-		if (this.opts.walkthrough)
-			this.startWalkthrough(contentEl, { nameSetting, nameInputEl, leverElements, colorSetting, swatchRow, typeSetting, typeSelectEl, commitCheckboxEl, footer, submitBtn });
+		this.walkthroughRefs = { nameSetting, nameInputEl, leverElements, colorSetting, swatchRow, typeSetting, typeSelectEl, commitCheckboxEl, footer, submitBtn };
+		if (this.opts.walkthrough) this.startWalkthrough(contentEl, this.walkthroughRefs);
 
 		window.setTimeout(() => nameInputEl?.focus(), 0);
 	}
@@ -560,21 +587,7 @@ class HabitFormModal extends Modal {
 	// Next/Back buttons, or naturally by the user filling out/selecting
 	// that step's field directly (typing + Enter/Tab away, picking a
 	// color, choosing Build/Break, checking the commit box).
-	startWalkthrough(
-		contentEl: HTMLElement,
-		refs: {
-			nameSetting: Setting;
-			nameInputEl: HTMLInputElement;
-			leverElements: Partial<Record<keyof HabitLevers, { setting: Setting; textareaEl: HTMLTextAreaElement }>>;
-			colorSetting: Setting;
-			swatchRow: HTMLElement;
-			typeSetting: Setting;
-			typeSelectEl: HTMLSelectElement;
-			commitCheckboxEl?: HTMLInputElement;
-			footer: HTMLElement;
-			submitBtn: HTMLButtonElement;
-		}
-	) {
+	startWalkthrough(contentEl: HTMLElement, refs: WalkthroughRefs) {
 		const lever = (key: keyof HabitLevers) => refs.leverElements[key]!;
 		const steps: WalkthroughStep[] = [
 			{

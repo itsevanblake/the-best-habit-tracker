@@ -53,6 +53,14 @@
 	color: var(--text-muted);
 }
 
+.habit-tracker-modal-walkthrough-btn {
+	display: block;
+	width: 100%;
+	margin-bottom: 12px;
+	text-align: center;
+	padding: 7px 10px;
+}
+
 .habit-tracker-walkthrough-btn:hover {
 	color: var(--text-normal);
 	background-color: var(--background-modifier-hover);
