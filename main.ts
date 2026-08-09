@@ -283,14 +283,45 @@ class HabitFormModal extends Modal {
 				: "Fill in whichever lines are useful; leave the rest blank. Keep the labels as-is — that's how it gets read back out.",
 		});
 
-		const leversBox = contentEl.createEl("textarea", { cls: "habit-tracker-levers-box" });
-		leversBox.value = leversToText(this.isNew ? EXAMPLE_LEVERS : this.values);
-		leversBox.rows = 5;
+		// A plain <textarea> can't mix text colors within its value, so this
+		// uses a contenteditable div instead: labels render in normal text
+		// color, example content (new-habit case only) renders dimmed. Once
+		// the user edits a line, whatever they type just takes on whichever
+		// span's color it lands in — no attempt to keep re-coloring live as
+		// they type, which would fight the cursor on every keystroke.
+		const leversBox = contentEl.createDiv({ cls: "habit-tracker-levers-box" });
+		leversBox.setAttr("contenteditable", "true");
+		leversBox.setAttr("tabindex", "0");
+
+		const seedValues = this.isNew ? EXAMPLE_LEVERS : this.values;
+		const leverLines: [string, string][] = [
+			["Identity: ", seedValues.identity],
+			["Stack: ", seedValues.stackedAfter],
+			["When/Where: ", seedValues.whenWhere],
+			["Minimum: ", seedValues.minimumVersion],
+			["Goal: ", seedValues.linkedGoal],
+		];
+		for (const [label, value] of leverLines) {
+			const lineEl = leversBox.createDiv();
+			lineEl.createSpan({ text: label, cls: "habit-tracker-levers-label" });
+			if (value) {
+				const valueSpan = lineEl.createSpan({ text: value });
+				if (this.isNew) valueSpan.addClass("habit-tracker-levers-example");
+			}
+		}
+
 		leversBox.addEventListener("input", () => {
-			Object.assign(this.values, parseLevers(leversBox.value));
+			Object.assign(this.values, parseLevers(leversBox.innerText));
 		});
+
 		if (this.isNew) {
-			window.setTimeout(() => leversBox.select(), 0);
+			window.setTimeout(() => {
+				const range = document.createRange();
+				range.selectNodeContents(leversBox);
+				const sel = window.getSelection();
+				sel?.removeAllRanges();
+				sel?.addRange(range);
+			}, 0);
 		}
 
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
