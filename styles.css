@@ -374,6 +374,29 @@ body.theme-dark {
 	color: var(--habit-color-contrast, var(--text-on-accent));
 }
 
+.habit-tracker-milestone-bubble {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 12px;
+	margin-bottom: 8px;
+	border-radius: var(--ht-radius-pill);
+	background-color: var(--background-secondary);
+	border: 1px dashed var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: 0.78em;
+	font-weight: 500;
+}
+
+.habit-tracker-milestone-bubble-achieved {
+	border-style: solid;
+	border-color: transparent;
+	background-color: var(--habit-color, var(--interactive-accent));
+	color: var(--habit-color-contrast, var(--text-on-accent));
+	font-weight: 700;
+	animation: habit-tracker-celebrate 1.4s ease-out;
+}
+
 .habit-tracker-identity {
 	font-size: 0.85em;
 	font-style: italic;

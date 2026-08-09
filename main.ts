@@ -1377,6 +1377,27 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			}).open();
 		};
 
+		// Days-to-next-milestone bubble, shared MILESTONES list with
+		// maybeCelebrate()/playCelebrationChime(). On the exact day a
+		// milestone is hit, this flips to an "Achieved" state for the rest
+		// of that day; the next tracked day (once the streak moves past
+		// that milestone number) it reverts to counting down to whichever
+		// milestone comes next.
+		const milestoneBubble = card.createDiv({ cls: "habit-tracker-milestone-bubble" });
+		if (MILESTONES.includes(stats.streak)) {
+			milestoneBubble.addClass("habit-tracker-milestone-bubble-achieved");
+			milestoneBubble.setText(`🎉 ${stats.streak}-Day Milestone Achieved!`);
+		} else {
+			const nextMilestone = MILESTONES.find((m) => m > stats.streak);
+			if (nextMilestone !== undefined) {
+				const daysLeft = nextMilestone - stats.streak;
+				milestoneBubble.setText(`🎯 ${daysLeft} ${daysLeft === 1 ? "day" : "days"} to next milestone`);
+			} else {
+				milestoneBubble.addClass("habit-tracker-milestone-bubble-achieved");
+				milestoneBubble.setText("🏆 All milestones achieved!");
+			}
+		}
+
 		// Atomic Habits detail line(s) — only rendered when set, so a habit
 		// with none of these looks exactly as plain as before.
 		if (habit.identity) {
