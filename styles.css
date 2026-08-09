@@ -863,6 +863,23 @@
 
 /* ---- Habit creation walkthrough ---- */
 
+/* Spotlight effect: while the walkthrough is running, everything in the
+   form dims and stops responding to clicks except the field currently
+   being explained (and the tooltip itself, which is never a direct child
+   matched by this rule since it's excluded below). */
+.habit-tracker-modal.habit-tracker-walkthrough-active > *:not(.habit-tracker-walkthrough-tooltip) {
+	opacity: 0.25;
+	filter: saturate(0.5);
+	pointer-events: none;
+	transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.habit-tracker-modal.habit-tracker-walkthrough-active > .habit-tracker-walkthrough-highlight {
+	opacity: 1;
+	filter: none;
+	pointer-events: auto;
+}
+
 .habit-tracker-walkthrough-highlight {
 	position: relative;
 	z-index: 1;

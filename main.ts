@@ -547,7 +547,8 @@ class HabitFormModal extends Modal {
 		submitBtn.onclick = () => this.submit();
 		focusOrder.push(submitBtn);
 
-		if (this.opts.walkthrough) this.startWalkthrough(contentEl, { nameSetting, nameInputEl, leverElements, colorSetting, swatchRow, typeSetting, typeSelectEl, commitCheckboxEl, submitBtn });
+		if (this.opts.walkthrough)
+			this.startWalkthrough(contentEl, { nameSetting, nameInputEl, leverElements, colorSetting, swatchRow, typeSetting, typeSelectEl, commitCheckboxEl, footer, submitBtn });
 
 		window.setTimeout(() => nameInputEl?.focus(), 0);
 	}
@@ -570,6 +571,7 @@ class HabitFormModal extends Modal {
 			typeSetting: Setting;
 			typeSelectEl: HTMLSelectElement;
 			commitCheckboxEl?: HTMLInputElement;
+			footer: HTMLElement;
 			submitBtn: HTMLButtonElement;
 		}
 	) {
@@ -642,7 +644,8 @@ class HabitFormModal extends Modal {
 		steps.push({
 			title: `${steps.length + 1}. Add the habit`,
 			body: "That's the whole formula. Click below to create your first habit and start your streak.",
-			target: refs.submitBtn,
+			target: refs.footer,
+			focusEl: refs.submitBtn,
 		});
 
 		const tooltip = contentEl.createDiv({ cls: "habit-tracker-walkthrough-tooltip" });
@@ -673,6 +676,7 @@ class HabitFormModal extends Modal {
 		const endWalkthrough = () => {
 			active = false;
 			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
+			contentEl.removeClass("habit-tracker-walkthrough-active");
 			tooltip.remove();
 		};
 
@@ -742,6 +746,7 @@ class HabitFormModal extends Modal {
 			);
 		}
 
+		contentEl.addClass("habit-tracker-walkthrough-active");
 		showStep(0);
 	}
 
