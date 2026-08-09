@@ -232,6 +232,40 @@ const TYPE_INFO = {
 		"The Four Laws of Behavior Change (make it obvious/attractive/easy/satisfying) work in reverse to break a bad habit: make it invisible, unattractive, difficult, and unsatisfying — same framework, applied backward.",
 };
 
+// How each field in this form maps to one of Clear's Four Laws of
+// Behavior Change — grounded in this vault's own Wiki/Concepts/Four Laws
+// of Behavior Change page. Law 2 and Law 4 don't have a dedicated text
+// field (Attractive is closer to the Identity/why; Satisfying is what the
+// tracker itself — the heatmap, streaks, milestone notices — supplies),
+// so they're included here for the full picture even though there's
+// nothing to type for them.
+const FOUR_LAWS: { law: string; stage: string; fields: string; text: string }[] = [
+	{
+		law: "Law 1 — Make It Obvious",
+		stage: "cue",
+		fields: "Stack, When/Where",
+		text: "Surface the cue. Habit stacking and implementation intentions make the trigger impossible to miss.",
+	},
+	{
+		law: "Law 2 — Make It Attractive",
+		stage: "craving",
+		fields: "Identity",
+		text: "Pair the habit with the identity you want — the craving is wanting to BE that kind of person, not just complete the task.",
+	},
+	{
+		law: "Law 3 — Make It Easy",
+		stage: "response",
+		fields: "Minimum",
+		text: "Reduce friction with the 2-minute rule — a version so small there's no excuse not to start.",
+	},
+	{
+		law: "Law 4 — Make It Satisfying",
+		stage: "reward",
+		fields: "The tracker itself",
+		text: "Supply an immediate reward. This is exactly what the heatmap, streak, and milestone notices below are for — real payoffs are usually too delayed to feel on their own.",
+	},
+];
+
 // Small "?" toggle next to a Setting's name that shows/hides a definition
 // + example box directly beneath it.
 function addHelpToggle(setting: Setting, container: HTMLElement, term: string, definition: string, example: string) {
@@ -342,6 +376,25 @@ class HabitFormModal extends Modal {
 				? "Filling these out is part of committing to the habit. Each label is fixed — you're only ever typing into the box beside it. The grey hint text shows an example and disappears the moment you start typing that field."
 				: "Each label is fixed — you're only ever typing into the box beside it.",
 		});
+
+		// Toggleable panel mapping each field to the specific one of
+		// Clear's Four Laws of Behavior Change it embodies.
+		const fourLawsToggle = contentEl.createDiv({
+			cls: "habit-tracker-fourlaws-toggle",
+			text: "📖 How this maps to the 4 Laws of Behavior Change",
+		});
+		const fourLawsBox = contentEl.createDiv({ cls: "habit-tracker-fourlaws-box" });
+		for (const item of FOUR_LAWS) {
+			const row = fourLawsBox.createDiv({ cls: "habit-tracker-fourlaws-row" });
+			const heading = row.createDiv({ cls: "habit-tracker-fourlaws-heading" });
+			heading.createSpan({ text: item.law, cls: "habit-tracker-fourlaws-law" });
+			heading.createSpan({ text: `(${item.stage})`, cls: "habit-tracker-fourlaws-stage" });
+			heading.createSpan({ text: `→ ${item.fields}`, cls: "habit-tracker-fourlaws-fields" });
+			row.createEl("p", { text: item.text });
+		}
+		fourLawsToggle.onclick = () => {
+			fourLawsBox.toggleClass("habit-tracker-fourlaws-box-visible", !fourLawsBox.hasClass("habit-tracker-fourlaws-box-visible"));
+		};
 
 		// Five separate fields rather than one combined box: the label
 		// (Setting.setName) isn't part of any editable control, so it can't
@@ -581,8 +634,8 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 	}
 }
 
-type ViewMode = "week" | "month" | "year";
-type CellStyle = "year" | "week" | "month";
+type ViewMode = "week" | "month" | "year" | "yeardays";
+type CellStyle = "year" | "week" | "month" | "yeardays";
 
 class HabitTrackerBlock extends MarkdownRenderChild {
 	plugin: HabitTrackerPlugin;
@@ -635,8 +688,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		const toggleRow = el.createDiv({ cls: "habit-tracker-global-toggle-row" });
 		const toggle = toggleRow.createDiv({ cls: "habit-tracker-view-toggle" });
-		const modeLabels: Record<ViewMode, string> = { week: "Week", month: "Month", year: "Year" };
-		(["week", "month", "year"] as ViewMode[]).forEach((mode) => {
+		const modeLabels: Record<ViewMode, string> = { week: "Week", month: "Month", year: "Year", yeardays: "Year - Days" };
+		(["week", "month", "year", "yeardays"] as ViewMode[]).forEach((mode) => {
 			const b = toggle.createEl("button", {
 				text: modeLabels[mode],
 				cls: "habit-tracker-view-btn" + (this.currentView === mode ? " habit-tracker-view-btn-active" : ""),
@@ -794,6 +847,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			this.renderWeekGrid(grid, habit, entries);
 		} else if (view === "month") {
 			this.renderMonthGrid(grid, habit, entries);
+		} else if (view === "yeardays") {
+			this.renderYearDaysGrid(grid, habit, entries);
 		} else {
 			this.renderYearGrid(grid, habit, entries);
 		}
@@ -898,26 +953,46 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 	}
 
+	renderYearDaysGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
+		const year = new Date().getFullYear();
+		const jan1 = new Date(year, 0, 1);
+		const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+		const totalDays = isLeap ? 366 : 365;
+
+		container.createDiv({ text: `${year} — ${totalDays} days`, cls: "habit-tracker-month-title" });
+
+		const gridEl = container.createDiv({ cls: "habit-tracker-yeardays-grid" });
+		for (let i = 0; i < totalDays; i++) {
+			const d = addDays(jan1, i);
+			this.renderCell(gridEl, habit, entries, d, "yeardays", i + 1);
+		}
+	}
+
 	renderCell(
 		gridEl: HTMLElement,
 		habit: HabitDefinition,
 		entries: Record<string, EntryValue>,
 		d: Date,
-		style: CellStyle
+		style: CellStyle,
+		dayNumberOverride?: number
 	) {
 		const today = new Date();
 		const dateStr = formatDate(d);
-		const boxed = style !== "year";
-		const cell = gridEl.createDiv({
-			cls: boxed ? "habit-tracker-week-cell" : "habit-tracker-cell",
-		});
+		const boxed = style === "week" || style === "month";
+		const cellBaseCls =
+			style === "week" || style === "month"
+				? "habit-tracker-week-cell"
+				: style === "yeardays"
+				? "habit-tracker-yeardays-cell"
+				: "habit-tracker-cell";
+		const cell = gridEl.createDiv({ cls: cellBaseCls });
 		cell.setAttr("data-date", dateStr);
-		// Only show the hover tooltip on the small year-view squares — the
-		// week/month cells already print the date directly, and the
-		// tooltip's positioning logic overflows past the card edge for
-		// cells near the left/top border, so it's both redundant and buggy
-		// there.
-		if (style === "year") {
+		// Only show the hover tooltip on the small square cells (year and
+		// year-days) — the week/month cells already print the date
+		// directly, and the tooltip's positioning logic overflows past the
+		// card edge for cells near the left/top border, so it's both
+		// redundant and buggy there.
+		if (!boxed) {
 			cell.setAttr("aria-label", dateStr);
 		}
 
@@ -927,7 +1002,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		} else if (style === "month") {
 			cell.createDiv({ text: "" + d.getDate(), cls: "habit-tracker-week-date-label" });
 		} else {
-			cell.createSpan({ text: "" + d.getDate(), cls: "habit-tracker-cell-daynum" });
+			cell.createSpan({ text: "" + (dayNumberOverride ?? d.getDate()), cls: "habit-tracker-cell-daynum" });
 		}
 
 		const futureCls = boxed ? "habit-tracker-week-cell-future" : "habit-tracker-cell-future";
@@ -1005,7 +1080,7 @@ export default class HabitTrackerPlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor("habit-tracker", (source, el, ctx) => {
 			const filterMatch = source.match(/^\s*habit:\s*(.+)\s*$/m);
 			const filterName = filterMatch ? filterMatch[1].trim() : null;
-			const viewMatch = source.match(/^\s*view:\s*(week|month|year)\s*$/m);
+			const viewMatch = source.match(/^\s*view:\s*(week|month|year|yeardays)\s*$/m);
 			// Year view's wide, horizontally-scrolling grid works well with a
 			// mouse on a desktop pane, but is a poor first impression on a
 			// narrow phone screen — default to Week there instead unless the

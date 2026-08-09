@@ -291,6 +291,35 @@
 	pointer-events: none;
 }
 
+/* ---- Year - Days view (flat Day 1..365, not calendar-aligned) ---- */
+
+.habit-tracker-yeardays-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+}
+
+.habit-tracker-yeardays-cell {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border-radius: 4px;
+	background-color: var(--background-modifier-border);
+	cursor: pointer;
+	transition: outline-color 0.08s ease, background-color 0.08s ease;
+}
+
+.habit-tracker-yeardays-cell:hover {
+	outline: 2px solid var(--text-muted);
+	filter: brightness(1.15);
+}
+
+.habit-tracker-yeardays-cell .habit-tracker-cell-daynum {
+	font-size: 0.6em;
+}
+
 /* Minimum/2-minute-rule version of a day — same color as a full
    completion but visibly lighter, so the distinction between "showed up
    minimally" and "did the full habit" stays legible at a glance. */
@@ -511,6 +540,66 @@
 
 .habit-tracker-help-example {
 	font-style: italic;
+}
+
+.habit-tracker-fourlaws-toggle {
+	font-size: 0.8em;
+	color: var(--text-accent);
+	cursor: pointer;
+	margin-bottom: 10px;
+	width: fit-content;
+}
+
+.habit-tracker-fourlaws-toggle:hover {
+	text-decoration: underline;
+}
+
+.habit-tracker-fourlaws-box {
+	display: none;
+	margin-bottom: 14px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background-color: var(--background-secondary);
+}
+
+.habit-tracker-fourlaws-box-visible {
+	display: block;
+}
+
+.habit-tracker-fourlaws-row {
+	padding: 6px 0;
+	font-size: 0.8em;
+}
+
+.habit-tracker-fourlaws-row:not(:last-child) {
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.habit-tracker-fourlaws-heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px;
+}
+
+.habit-tracker-fourlaws-law {
+	font-weight: 700;
+	color: var(--text-normal);
+}
+
+.habit-tracker-fourlaws-stage {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.habit-tracker-fourlaws-fields {
+	color: var(--interactive-accent);
+	font-weight: 600;
+}
+
+.habit-tracker-fourlaws-row p {
+	margin: 4px 0 0;
+	color: var(--text-muted);
 }
 
 .habit-tracker-swatch-row {
