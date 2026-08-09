@@ -494,7 +494,7 @@ class HabitFormModal extends Modal {
 		contentEl.addClass("habit-tracker-modal");
 		contentEl.createEl("h3", { text: this.opts.title });
 
-		if (this.isNew && !this.opts.walkthrough) {
+		if (!this.opts.walkthrough) {
 			const walkthroughBtn = contentEl.createEl("button", {
 				text: "🎓 Habit Creation Walkthrough",
 				cls: "habit-tracker-walkthrough-btn habit-tracker-modal-walkthrough-btn",
