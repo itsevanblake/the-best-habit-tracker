@@ -453,35 +453,6 @@
 	padding: 4px 0 8px;
 }
 
-.habit-tracker-levers-box {
-	width: 100%;
-	min-height: 120px;
-	font-family: var(--font-monospace, monospace);
-	font-size: 0.85em;
-	line-height: 1.6;
-	padding: 10px 12px;
-	border-radius: 8px;
-	border: 1px solid var(--background-modifier-border);
-	background-color: var(--background-secondary);
-	color: var(--text-normal);
-	overflow-y: auto;
-	white-space: pre-wrap;
-}
-
-.habit-tracker-levers-box:focus {
-	outline: none;
-	border-color: var(--interactive-accent);
-}
-
-.habit-tracker-levers-label {
-	color: var(--text-normal);
-	font-weight: 600;
-}
-
-.habit-tracker-levers-example {
-	color: var(--text-faint);
-}
-
 .habit-tracker-swatch {
 	width: 26px;
 	height: 26px;

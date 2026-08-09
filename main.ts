@@ -156,27 +156,12 @@ interface HabitFormValues extends HabitLevers {
 	type: HabitType;
 }
 
-// All five Atomic Habits lever fields live in one combined textarea instead
-// of five separate inputs — reads as one cohesive "design this habit" box.
-// Always emitting all five labeled lines (blank after the colon where
-// unset) means the box always shows the expected format, in both the "New
-// habit" and "Edit habit" forms, with zero risk of storing placeholder
-// junk: a blank value after a label parses back out to "" and is dropped.
-function leversToText(v: HabitLevers): string {
-	return [
-		`Identity: ${v.identity}`,
-		`Stack: ${v.stackedAfter}`,
-		`When/Where: ${v.whenWhere}`,
-		`Minimum: ${v.minimumVersion}`,
-		`Goal: ${v.linkedGoal}`,
-	].join("\n");
-}
-
-// Shown, pre-filled, in the levers box for a brand-new habit (nothing set
-// yet) so the format is demonstrated with a real example rather than bare
-// labels. The box auto-selects its own text on open (see HabitFormModal),
-// so the first keystroke naturally replaces this rather than risking it
-// getting submitted verbatim.
+// Shown as each field's placeholder hint for a brand-new habit (nothing
+// set yet). Native placeholder text is inherently the right tool here: it
+// renders dimmed automatically, and disappears the instant that specific
+// field is typed into — no custom clear-on-type logic needed, and it
+// can never be accidentally submitted as real data (placeholders aren't
+// part of a field's value).
 const EXAMPLE_LEVERS: HabitLevers = {
 	identity: "I am someone who takes care of my body",
 	stackedAfter: "I brush my teeth in the morning",
@@ -184,24 +169,6 @@ const EXAMPLE_LEVERS: HabitLevers = {
 	minimumVersion: "Just put on my running shoes",
 	linkedGoal: "2026-Q3",
 };
-
-function parseLevers(text: string): HabitLevers {
-	const result: HabitLevers = { identity: "", stackedAfter: "", whenWhere: "", minimumVersion: "", linkedGoal: "" };
-	const lineRe = /^\s*(identity|stack|when\/where|when|minimum(?:\s*version)?|linked\s*goal|goal)\s*:\s*(.*)$/i;
-	for (const rawLine of text.split("\n")) {
-		const m = rawLine.match(lineRe);
-		if (!m) continue;
-		const label = m[1].toLowerCase().replace(/\s+/g, "");
-		const value = m[2].trim();
-		if (!value) continue;
-		if (label === "identity") result.identity = value;
-		else if (label === "stack") result.stackedAfter = value;
-		else if (label === "when/where" || label === "when") result.whenWhere = value;
-		else if (label.startsWith("minimum")) result.minimumVersion = value;
-		else if (label === "goal" || label === "linkedgoal") result.linkedGoal = value;
-	}
-	return result;
-}
 
 interface HabitFormOptions {
 	title: string;
@@ -278,50 +245,29 @@ class HabitFormModal extends Modal {
 		contentEl.createEl("h4", { text: "Optional — Atomic Habits levers" });
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
-			text: this.isNew
-				? "Pre-filled with an example — it's selected, so just start typing to replace it, or edit/delete individual lines. Keep the labels as-is."
-				: "Fill in whichever lines are useful; leave the rest blank. Keep the labels as-is — that's how it gets read back out.",
+			text: "Each label is fixed — you're only ever typing into the box beside it. For a new habit, the grey hint text shows an example and disappears the moment you start typing that field.",
 		});
 
-		// A plain <textarea> can't mix text colors within its value, so this
-		// uses a contenteditable div instead: labels render in normal text
-		// color, example content (new-habit case only) renders dimmed. Once
-		// the user edits a line, whatever they type just takes on whichever
-		// span's color it lands in — no attempt to keep re-coloring live as
-		// they type, which would fight the cursor on every keystroke.
-		const leversBox = contentEl.createDiv({ cls: "habit-tracker-levers-box" });
-		leversBox.setAttr("contenteditable", "true");
-		leversBox.setAttr("tabindex", "0");
-
-		const seedValues = this.isNew ? EXAMPLE_LEVERS : this.values;
-		const leverLines: [string, string][] = [
-			["Identity: ", seedValues.identity],
-			["Stack: ", seedValues.stackedAfter],
-			["When/Where: ", seedValues.whenWhere],
-			["Minimum: ", seedValues.minimumVersion],
-			["Goal: ", seedValues.linkedGoal],
+		// Five separate fields rather than one combined box: the label
+		// (Setting.setName) isn't part of any editable control, so it can't
+		// be typed into or deleted, and each field's own native placeholder
+		// clears itself the instant that specific field is typed into —
+		// both were explicit requirements, and both are just how these
+		// primitives already behave, no custom logic required.
+		const leverRows: { label: string; key: keyof HabitLevers; example: string }[] = [
+			{ label: "Identity", key: "identity", example: EXAMPLE_LEVERS.identity },
+			{ label: "Stack", key: "stackedAfter", example: EXAMPLE_LEVERS.stackedAfter },
+			{ label: "When/Where", key: "whenWhere", example: EXAMPLE_LEVERS.whenWhere },
+			{ label: "Minimum", key: "minimumVersion", example: EXAMPLE_LEVERS.minimumVersion },
+			{ label: "Goal", key: "linkedGoal", example: EXAMPLE_LEVERS.linkedGoal },
 		];
-		for (const [label, value] of leverLines) {
-			const lineEl = leversBox.createDiv();
-			lineEl.createSpan({ text: label, cls: "habit-tracker-levers-label" });
-			if (value) {
-				const valueSpan = lineEl.createSpan({ text: value });
-				if (this.isNew) valueSpan.addClass("habit-tracker-levers-example");
-			}
-		}
-
-		leversBox.addEventListener("input", () => {
-			Object.assign(this.values, parseLevers(leversBox.innerText));
-		});
-
-		if (this.isNew) {
-			window.setTimeout(() => {
-				const range = document.createRange();
-				range.selectNodeContents(leversBox);
-				const sel = window.getSelection();
-				sel?.removeAllRanges();
-				sel?.addRange(range);
-			}, 0);
+		for (const row of leverRows) {
+			new Setting(contentEl).setName(row.label).addText((text) => {
+				if (this.isNew) text.setPlaceholder(row.example);
+				text.setValue(this.values[row.key]).onChange((v) => {
+					this.values[row.key] = v;
+				});
+			});
 		}
 
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
