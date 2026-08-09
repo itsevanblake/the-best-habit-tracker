@@ -579,54 +579,54 @@ class HabitFormModal extends Modal {
 		const steps: WalkthroughStep[] = [
 			{
 				title: "1. Name it",
-				body: 'Give your habit a short, concrete name — something you\'d recognize at a glance, like "Morning run".',
+				body: 'Let\'s build your first habit together. Start by giving it a short, concrete name — something you\'d recognize at a glance, like "Morning run".',
 				target: refs.nameSetting.settingEl,
 				focusEl: refs.nameInputEl,
 			},
 			{
 				title: `2. ${LEVER_TERM_INFO.identity.term}`,
-				body: `${LEVER_TERM_INFO.identity.definition} Try: "${EXAMPLE_LEVERS.identity}"`,
+				body: `This isn't just about the outcome — it's a vote for who you're becoming. Every time you follow through, you're proving something to yourself. Who are you becoming by doing this? Example: "${EXAMPLE_LEVERS.identity}"`,
 				target: lever("identity").setting.settingEl,
 				focusEl: lever("identity").textareaEl,
 			},
 			{
 				title: `3. ${LEVER_TERM_INFO.linkedGoal.term}`,
-				body: `${LEVER_TERM_INFO.linkedGoal.definition} eg: "${EXAMPLE_LEVERS.linkedGoal}"`,
+				body: `You don't rise to the level of your goals — you fall to the level of your systems. This habit is your system; what goal is it actually serving for you? Example: "${EXAMPLE_LEVERS.linkedGoal}"`,
 				target: lever("linkedGoal").setting.settingEl,
 				focusEl: lever("linkedGoal").textareaEl,
 			},
 			{
 				title: "4. Pick a color",
-				body: "Give the habit a color so its appearance stands out from the others at a glance. Click a preset color, or pick and save a custom one from the wheel.",
+				body: "Give your habit a color so you can spot it at a glance. Click a preset color, or pick and save your own from the wheel.",
 				target: refs.swatchRow,
 			},
 			{
 				title: `5. ${TYPE_INFO.term}`,
-				body: `${TYPE_INFO.definition} Pick Build if you're starting this habit, or Break if you're trying to quit it.`,
+				body: "Are you starting this habit, or trying to quit one? Pick Build if you're starting it, or Break if you're trying to quit it — the same Four Laws apply, just reversed for breaking a habit.",
 				target: refs.typeSetting.settingEl,
 				focusEl: refs.typeSelectEl,
 			},
 			{
 				title: `6. ${LEVER_TERM_INFO.stackedAfter.term}`,
-				body: `${LEVER_TERM_INFO.stackedAfter.definition} Try: "${EXAMPLE_LEVERS.stackedAfter}"`,
+				body: `What will remind you to do this? Anchor it to something you already do without thinking, so the cue is impossible for you to miss. Example: "${EXAMPLE_LEVERS.stackedAfter}"`,
 				target: lever("stackedAfter").setting.settingEl,
 				focusEl: lever("stackedAfter").textareaEl,
 			},
 			{
 				title: `7. ${LEVER_TERM_INFO.craving.term}`,
-				body: `${LEVER_TERM_INFO.craving.definition} Try: "${EXAMPLE_LEVERS.craving}"`,
+				body: `What makes you actually want to do this? Tie it to something you already crave, so that craving pulls you in. Example: "${EXAMPLE_LEVERS.craving}"`,
 				target: lever("craving").setting.settingEl,
 				focusEl: lever("craving").textareaEl,
 			},
 			{
 				title: `8. ${LEVER_TERM_INFO.minimumVersion.term}`,
-				body: `${LEVER_TERM_INFO.minimumVersion.definition} Try: "${EXAMPLE_LEVERS.minimumVersion}"`,
+				body: `Now scale it down for yourself. What's the two-minute version you could do even on your worst day? Optimize for showing up, not for going hard. Example: "${EXAMPLE_LEVERS.minimumVersion}"`,
 				target: lever("minimumVersion").setting.settingEl,
 				focusEl: lever("minimumVersion").textareaEl,
 			},
 			{
 				title: `9. ${LEVER_TERM_INFO.reward.term}`,
-				body: `${LEVER_TERM_INFO.reward.definition} Try: "${EXAMPLE_LEVERS.reward}"`,
+				body: `How will you know you're done, right away? Give yourself an immediate payoff — that's what will make you want to repeat this tomorrow. Example: "${EXAMPLE_LEVERS.reward}"`,
 				target: lever("reward").setting.settingEl,
 				focusEl: lever("reward").textareaEl,
 			},
@@ -635,7 +635,7 @@ class HabitFormModal extends Modal {
 		if (refs.commitCheckboxEl) {
 			steps.push({
 				title: "10. Commit",
-				body: "Check the box to commit to this habit — a small, deliberate act that makes the intention concrete before you start.",
+				body: "Ready to commit? Check the box below to make it official for yourself — a small, deliberate act that locks in your intention before you start.",
 				target: (refs.commitCheckboxEl.closest("label") as HTMLElement) ?? refs.commitCheckboxEl,
 				focusEl: refs.commitCheckboxEl,
 			});
@@ -643,7 +643,7 @@ class HabitFormModal extends Modal {
 
 		steps.push({
 			title: `${steps.length + 1}. Add the habit`,
-			body: "That's the whole formula. Click below to create your first habit and start your streak.",
+			body: "You've just built your whole system. Click below to add your first habit and start your streak.",
 			target: refs.footer,
 			focusEl: refs.submitBtn,
 		});
