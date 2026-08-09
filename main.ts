@@ -35,7 +35,16 @@ interface PluginSettings {
 
 const DEFAULT_SETTINGS: PluginSettings = { supabaseUrl: "", supabaseAnonKey: "" };
 
-const PALETTE = ["#2e8840", "#1872ff", "#e73400", "#dd6f00", "#c30062", "#7bc96f"];
+const PALETTE = [
+	"#2e8840", // green
+	"#1872ff", // blue
+	"#e73400", // red
+	"#dd6f00", // orange
+	"#8e44ad", // purple
+	"#eab308", // yellow
+	"#c30062", // pink
+	"#0d9488", // teal
+];
 
 function pad(n: number): string {
 	return n < 10 ? "0" + n : "" + n;
@@ -280,17 +289,31 @@ class HabitFormModal extends Modal {
 		new Setting(contentEl).setName("Color");
 		const swatchRow = contentEl.createDiv({ cls: "habit-tracker-swatch-row" });
 		const swatches: HTMLElement[] = [];
+		const deselectSwatches = () => swatches.forEach((s) => s.removeClass("habit-tracker-swatch-selected"));
 		PALETTE.forEach((c) => {
 			const swatch = swatchRow.createDiv({ cls: "habit-tracker-swatch" });
 			swatch.style.backgroundColor = c;
 			if (c === this.values.color) swatch.addClass("habit-tracker-swatch-selected");
 			swatch.onclick = () => {
 				this.values.color = c;
-				swatches.forEach((s) => s.removeClass("habit-tracker-swatch-selected"));
+				deselectSwatches();
 				swatch.addClass("habit-tracker-swatch-selected");
+				colorWheel.value = c;
 			};
 			swatches.push(swatch);
 		});
+
+		// Full color wheel for anything the 8 presets don't cover — a
+		// native <input type="color"> opens the OS's own color picker
+		// (a real wheel/spectrum) on both desktop and mobile.
+		const colorWheel = swatchRow.createEl("input", { cls: "habit-tracker-color-wheel" });
+		colorWheel.type = "color";
+		colorWheel.value = this.values.color;
+		colorWheel.setAttr("aria-label", "Custom color");
+		colorWheel.oninput = () => {
+			this.values.color = colorWheel.value;
+			deselectSwatches();
+		};
 
 		const typeSetting = new Setting(contentEl).setName("Type").addDropdown((dd) => {
 			dd.addOption("build", "Build (start a habit)");

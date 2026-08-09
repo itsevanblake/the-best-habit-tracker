@@ -537,6 +537,33 @@
 	outline-color: var(--text-normal);
 }
 
+.habit-tracker-color-wheel {
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: 2px dashed var(--background-modifier-border);
+	border-radius: 50%;
+	cursor: pointer;
+	background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.habit-tracker-color-wheel::-webkit-color-swatch-wrapper {
+	padding: 0;
+	border-radius: 50%;
+	overflow: hidden;
+}
+
+.habit-tracker-color-wheel::-webkit-color-swatch {
+	border: none;
+	border-radius: 50%;
+}
+
+.habit-tracker-color-wheel:hover {
+	transform: scale(1.1);
+}
+
 .habit-tracker-modal-footer {
 	display: flex;
 	justify-content: flex-end;
@@ -563,7 +590,8 @@
 		font-size: 0.85em;
 	}
 
-	.habit-tracker-swatch {
+	.habit-tracker-swatch,
+	.habit-tracker-color-wheel {
 		width: 36px;
 		height: 36px;
 	}
