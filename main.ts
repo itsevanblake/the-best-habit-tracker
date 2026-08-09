@@ -65,6 +65,14 @@ function slugify(name: string): string {
 	);
 }
 
+// Grows a textarea's height to fit its content instead of leaving it a
+// fixed number of rows — reset to "auto" first so it can shrink back down
+// too (e.g. after deleting text), not just grow.
+function autoGrow(el: HTMLTextAreaElement) {
+	el.style.height = "auto";
+	el.style.height = el.scrollHeight + "px";
+}
+
 interface Stats {
 	streak: number;
 	bestStreak: number;
@@ -262,12 +270,15 @@ class HabitFormModal extends Modal {
 			{ label: "Goal", key: "linkedGoal", example: EXAMPLE_LEVERS.linkedGoal },
 		];
 		for (const row of leverRows) {
-			const setting = new Setting(contentEl).setName(row.label).addText((text) => {
+			const setting = new Setting(contentEl).setName(row.label).addTextArea((text) => {
 				if (this.isNew) text.setPlaceholder(row.example);
 				text.setValue(this.values[row.key]).onChange((v) => {
 					this.values[row.key] = v;
+					autoGrow(text.inputEl);
 				});
 				text.inputEl.addClass("habit-tracker-lever-input");
+				text.inputEl.rows = 1;
+				window.setTimeout(() => autoGrow(text.inputEl), 0);
 			});
 			setting.settingEl.addClass("habit-tracker-lever-setting");
 		}

@@ -447,16 +447,21 @@
 	letter-spacing: 0.03em;
 }
 
-/* The lever fields' example text (e.g. "Just put on my running shoes")
-   is longer than Obsidian's default Setting-row input width allows, so
-   it was getting visually truncated. Let the control side of these rows
-   grow and give the input itself the room to actually show it. */
+/* The lever fields' example/typed text can be longer than a single-line
+   input comfortably shows. These are textareas that auto-grow in height
+   as the user types (see autoGrow() in main.ts) rather than relying on
+   horizontal scroll within a fixed-size box. */
 .habit-tracker-lever-setting .setting-item-control {
 	flex-grow: 1;
 }
 
 .habit-tracker-lever-input {
 	width: 100%;
+	min-height: 2.2em;
+	resize: none;
+	overflow: hidden;
+	line-height: 1.4;
+	font-family: inherit;
 }
 
 .habit-tracker-swatch-row {
