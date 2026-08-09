@@ -35,15 +35,18 @@ interface PluginSettings {
 
 const DEFAULT_SETTINGS: PluginSettings = { supabaseUrl: "", supabaseAnonKey: "" };
 
+// A cohesive, vibrant set (consistent saturation/lightness rather than a
+// mixed bag of muddy and bright tones) that reads well in both light and
+// dark themes.
 const PALETTE = [
-	"#2e8840", // green
-	"#1872ff", // blue
-	"#e73400", // red
-	"#dd6f00", // orange
-	"#8e44ad", // purple
+	"#22c55e", // green
+	"#3b82f6", // blue
+	"#ef4444", // red
+	"#f97316", // orange
+	"#a855f7", // purple
 	"#eab308", // yellow
-	"#c30062", // pink
-	"#0d9488", // teal
+	"#ec4899", // pink
+	"#14b8a6", // teal
 ];
 
 function pad(n: number): string {
