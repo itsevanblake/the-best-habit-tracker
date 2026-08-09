@@ -975,7 +975,7 @@ class HabitFormModal extends Modal {
 			reward: this.values.reward.trim(),
 			linkedGoal: this.values.linkedGoal.trim(),
 		});
-		if (this.opts.walkthrough) {
+		if (this.opts.walkthrough && this.isNew) {
 			this.showCongrats(name);
 		} else {
 			this.close();
