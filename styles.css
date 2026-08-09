@@ -1,3 +1,31 @@
+/* ---- Design tokens ---- */
+/* Prefixed (--ht-) since these land on :root, which is shared with the rest
+   of the app. A small, consistent scale replaces the previously ad hoc
+   mixed radius/shadow values scattered through this file. Shadows get a
+   dedicated dark-theme override — Obsidian's actual active theme is
+   tracked via the .theme-dark class on <body>, not the OS-level
+   prefers-color-scheme (which can disagree with it), so flat black
+   box-shadows read muddy against a dark background unless adjusted here. */
+:root {
+	--ht-space-1: 4px;
+	--ht-space-2: 8px;
+	--ht-space-3: 12px;
+	--ht-space-4: 16px;
+	--ht-space-5: 20px;
+	--ht-radius-sm: 4px;
+	--ht-radius-md: 6px;
+	--ht-radius-lg: 10px;
+	--ht-radius-xl: 12px;
+	--ht-radius-pill: 999px;
+	--ht-shadow-sm: 0 1px 6px rgba(0, 0, 0, 0.08);
+	--ht-shadow-md: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+body.theme-dark {
+	--ht-shadow-sm: 0 1px 6px rgba(0, 0, 0, 0.35);
+	--ht-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
 /* Break the tracker out of Obsidian's "Readable Line Length" column so it
    can use the full width of the pane, not just the constrained text
    column. Only affects notes that actually contain this block. */
@@ -19,16 +47,51 @@
 }
 
 .habit-tracker-empty {
-	color: var(--text-muted);
-	font-style: italic;
-	padding: 1.5em 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--ht-space-2);
+	padding: 2.4em var(--ht-space-3);
 	text-align: center;
+	border: 1.5px dashed var(--background-modifier-border);
+	border-radius: var(--ht-radius-xl);
+}
+
+.habit-tracker-empty-icon {
+	font-size: 2em;
+	line-height: 1;
+	margin-bottom: var(--ht-space-1);
+}
+
+.habit-tracker-empty-title {
+	font-weight: 600;
+	font-size: 1.05em;
+	color: var(--text-normal);
+}
+
+.habit-tracker-empty-subtitle {
+	color: var(--text-muted);
+	font-size: 0.85em;
+	max-width: 32em;
 }
 
 .habit-tracker-list {
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
+	/* render() rebuilds this element fresh on every view switch/refresh, so
+	   the animation naturally replays each time rather than needing a class
+	   toggle — a light fade instead of the grid just instantly popping in. */
+	animation: habit-tracker-fade-in 0.15s ease-out;
+}
+
+@keyframes habit-tracker-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
 }
 
 /* ---- Global Week/Year toggle ---- */
@@ -49,8 +112,9 @@
 	cursor: pointer;
 	background-color: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--ht-radius-md);
 	color: var(--text-muted);
+	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
 }
 
 .habit-tracker-modal-walkthrough-btn {
@@ -69,7 +133,7 @@
 .habit-tracker-view-toggle {
 	display: flex;
 	background-color: var(--background-secondary);
-	border-radius: 8px;
+	border-radius: var(--ht-radius-lg);
 	padding: 3px;
 	gap: 2px;
 	border: 1px solid var(--background-modifier-border);
@@ -82,7 +146,7 @@
 	cursor: pointer;
 	background: transparent;
 	border: none;
-	border-radius: 6px;
+	border-radius: var(--ht-radius-md);
 	color: var(--text-muted);
 	box-shadow: none;
 	transition: background-color 0.12s ease, color 0.12s ease;
@@ -103,15 +167,16 @@
 
 .habit-tracker-habit {
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 12px;
+	border-radius: var(--ht-radius-xl);
 	padding: 20px 22px 22px;
 	background-color: var(--background-primary-alt, var(--background-secondary));
 	border-left: 4px solid var(--habit-color, var(--interactive-accent));
-	transition: box-shadow 0.15s ease;
+	transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .habit-tracker-habit:hover {
-	box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+	box-shadow: var(--ht-shadow-sm);
+	border-color: var(--habit-color, var(--background-modifier-border));
 }
 
 .habit-tracker-header {
@@ -155,18 +220,51 @@
 	display: flex;
 	align-items: baseline;
 	gap: 4px;
-	padding: 5px 12px;
-	border-radius: 999px;
+	padding: 4px 10px;
+	border-radius: var(--ht-radius-pill);
 	background-color: var(--background-secondary);
-	font-size: 0.8em;
+	font-size: 0.74em;
+	transition: box-shadow 0.15s ease;
 }
 
+/* The streak is the number that actually matters day to day — give it more
+   visual weight than best/total/year (still all visible, per the current
+   design; just not competing equally for attention). */
 .habit-tracker-pill-streak {
-	background-color: color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 16%, var(--background-secondary));
+	padding: 5px 13px;
+	font-size: 0.85em;
+	background-color: color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 18%, var(--background-secondary));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 35%, transparent);
+}
+
+.habit-tracker-pill-streak .habit-tracker-pill-icon {
+	font-size: 1.05em;
+}
+
+.habit-tracker-pill-streak .habit-tracker-pill-value {
+	font-size: 1.1em;
+	color: var(--habit-color, var(--interactive-accent));
+}
+
+/* Milestone echo — a brief glow on the streak pill, timed to match the
+   Notice toast fired by maybeCelebrate() so the in-card moment and the
+   toast land together. */
+@keyframes habit-tracker-celebrate {
+	0%,
+	100% {
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 35%, transparent);
+	}
+	30% {
+		box-shadow: 0 0 0 4px color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 45%, transparent);
+	}
+}
+
+.habit-tracker-pill-celebrate {
+	animation: habit-tracker-celebrate 1.4s ease-out;
 }
 
 .habit-tracker-pill-icon {
-	font-size: 0.9em;
+	font-size: 0.85em;
 }
 
 .habit-tracker-pill-value {
@@ -183,7 +281,7 @@
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	padding: 2px 6px;
-	border-radius: 4px;
+	border-radius: var(--ht-radius-sm);
 	color: var(--text-on-accent);
 	margin-left: 2px;
 }
@@ -194,6 +292,10 @@
 
 .habit-tracker-type-badge-build {
 	background-color: var(--habit-color, var(--interactive-accent));
+	/* The badge's background is the habit's own color, which can be a
+	   light custom pick — --text-on-accent alone isn't guaranteed to read
+	   against it, so fall back to the computed per-habit contrast color. */
+	color: var(--habit-color-contrast, var(--text-on-accent));
 }
 
 .habit-tracker-identity {
@@ -279,8 +381,8 @@
 	justify-content: center;
 	width: 100%;
 	aspect-ratio: 1 / 1;
-	border-radius: 4px;
-	background-color: var(--background-modifier-border);
+	border-radius: var(--ht-radius-sm);
+	background-color: color-mix(in srgb, var(--background-modifier-border) 65%, transparent);
 	cursor: pointer;
 	transition: outline-color 0.08s ease, background-color 0.08s ease;
 }
@@ -294,7 +396,7 @@
 }
 
 .habit-tracker-cell-done .habit-tracker-cell-daynum {
-	color: var(--text-on-accent);
+	color: var(--habit-color-contrast, var(--text-on-accent));
 }
 
 .habit-tracker-cell:hover {
@@ -304,6 +406,26 @@
 
 .habit-tracker-cell-today {
 	outline: 2px solid var(--habit-color, var(--text-accent));
+}
+
+/* The "reward" moment — a brief pop played on the exact cell just checked
+   off, before the next full re-render replaces it. Shared across every
+   grid style (year, year-days, week, month) since renderCell() drives all
+   four through this one class. */
+@keyframes habit-tracker-pop {
+	0% {
+		transform: scale(1);
+	}
+	40% {
+		transform: scale(1.22);
+	}
+	100% {
+		transform: scale(1);
+	}
+}
+
+.habit-tracker-cell-pop {
+	animation: habit-tracker-pop 0.28s ease-out;
 }
 
 .habit-tracker-cell-future {
@@ -332,8 +454,8 @@
 	justify-content: center;
 	width: 26px;
 	height: 26px;
-	border-radius: 4px;
-	background-color: var(--background-modifier-border);
+	border-radius: var(--ht-radius-sm);
+	background-color: color-mix(in srgb, var(--background-modifier-border) 65%, transparent);
 	cursor: pointer;
 	transition: outline-color 0.08s ease, background-color 0.08s ease;
 }
@@ -348,10 +470,13 @@
 }
 
 /* Minimum/2-minute-rule version of a day — same color as a full
-   completion but visibly lighter, so the distinction between "showed up
-   minimally" and "did the full habit" stays legible at a glance. */
+   completion but visibly lighter, plus a dashed ring so the distinction
+   between "showed up minimally" and "did the full habit" doesn't rely on
+   opacity/color alone (also reads for colorblind users). */
 .habit-tracker-cell-min {
-	opacity: 0.5;
+	opacity: 0.55;
+	outline: 1px dashed var(--habit-color, var(--text-muted));
+	outline-offset: -1px;
 }
 
 /* ---- Week grid ---- */
@@ -371,7 +496,7 @@
 	flex: 1;
 	aspect-ratio: 1 / 1;
 	max-width: 76px;
-	border-radius: 10px;
+	border-radius: var(--ht-radius-lg);
 	background-color: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
 	cursor: pointer;
@@ -401,11 +526,13 @@
 
 .habit-tracker-week-cell-done .habit-tracker-week-day-label,
 .habit-tracker-week-cell-done .habit-tracker-week-date-label {
-	color: var(--text-on-accent);
+	color: var(--habit-color-contrast, var(--text-on-accent));
 }
 
 .habit-tracker-week-cell-min {
 	opacity: 0.6;
+	outline: 2px dashed var(--habit-color, var(--text-muted));
+	outline-offset: -2px;
 }
 
 .habit-tracker-week-cell-future {
@@ -465,10 +592,14 @@
 	gap: 6px;
 	padding: 12px;
 	border: 1.5px dashed var(--background-modifier-border);
-	border-radius: 10px;
+	border-radius: var(--ht-radius-xl);
 	color: var(--text-muted);
 	cursor: pointer;
-	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease, transform 0.1s ease;
+}
+
+.habit-tracker-add-card:active {
+	transform: scale(0.98);
 }
 
 .habit-tracker-add-card:hover {
@@ -496,15 +627,20 @@
 
 .habit-tracker-modal h3 {
 	margin-top: 0;
+	margin-bottom: var(--ht-space-3);
+	font-size: 1.25em;
 }
 
 .habit-tracker-modal h4 {
-	margin-top: 18px;
-	margin-bottom: 4px;
+	margin-top: 22px;
+	margin-bottom: var(--ht-space-2);
+	padding-top: var(--ht-space-3);
+	border-top: 1px solid var(--background-modifier-border);
 	color: var(--text-muted);
-	font-size: 0.85em;
+	font-size: 0.8em;
+	font-weight: 700;
 	text-transform: uppercase;
-	letter-spacing: 0.03em;
+	letter-spacing: 0.05em;
 }
 
 /* The lever fields' example/typed text can be longer than a single-line
@@ -562,7 +698,7 @@
 	display: none;
 	margin: -4px 0 12px;
 	padding: 8px 12px;
-	border-radius: 6px;
+	border-radius: var(--ht-radius-md);
 	border-left: 2px solid var(--interactive-accent);
 	background-color: var(--background-secondary);
 	font-size: 0.8em;
@@ -601,7 +737,7 @@
 	display: none;
 	margin-bottom: 14px;
 	padding: 10px 12px;
-	border-radius: 8px;
+	border-radius: var(--ht-radius-lg);
 	background-color: var(--background-secondary);
 }
 
@@ -741,12 +877,18 @@
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	margin-top: 16px;
-	padding: 10px 12px;
-	border-radius: 8px;
+	margin-top: var(--ht-space-4);
+	padding: var(--ht-space-2) var(--ht-space-3);
+	border-radius: var(--ht-radius-lg);
 	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
 	cursor: pointer;
 	font-weight: 600;
+	transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.habit-tracker-commit-row:hover {
+	border-color: var(--interactive-accent);
 }
 
 .habit-tracker-commit-checkbox {
@@ -754,12 +896,24 @@
 	height: 18px;
 	cursor: pointer;
 	flex-shrink: 0;
+	accent-color: var(--interactive-accent);
 }
 
 .habit-tracker-modal-footer {
 	display: flex;
 	justify-content: flex-end;
-	margin-top: 12px;
+	margin-top: var(--ht-space-4);
+	padding-top: var(--ht-space-3);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Consistent, visible focus rings for keyboard navigation throughout the
+   modal — buttons and interactive circles (swatches/color wheel) don't get
+   a focus style from Obsidian's own theme by default. */
+.habit-tracker-modal button:focus-visible,
+.habit-tracker-color-wheel:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
 
 /* ---- Touch devices ---- */
@@ -898,7 +1052,7 @@
 	z-index: 1;
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 4px;
-	border-radius: 6px;
+	border-radius: var(--ht-radius-md);
 	background-color: var(--background-modifier-hover);
 }
 
@@ -907,10 +1061,22 @@
 	z-index: 2;
 	width: min(320px, calc(100% - 24px));
 	padding: 12px 14px;
-	border-radius: 10px;
+	border-radius: var(--ht-radius-lg);
 	background-color: var(--background-primary);
 	border: 1px solid var(--interactive-accent);
-	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+	box-shadow: var(--ht-shadow-md);
+	animation: habit-tracker-tooltip-in 0.18s ease-out;
+}
+
+@keyframes habit-tracker-tooltip-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 .habit-tracker-walkthrough-progress {

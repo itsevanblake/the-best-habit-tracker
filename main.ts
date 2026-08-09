@@ -84,6 +84,23 @@ function slugify(name: string): string {
 	);
 }
 
+// Obsidian's --text-on-accent is tuned for the theme's own accent color, not
+// an arbitrary user-picked habit color — a light/pastel custom color can
+// make that text unreadable. Picks black or white via the standard YIQ
+// perceived-brightness formula so text painted directly on a habit's color
+// (badges, done-cell labels) stays legible regardless of which color was
+// chosen.
+function contrastColor(hex: string): string {
+	const clean = hex.replace("#", "");
+	const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+	const r = parseInt(full.slice(0, 2), 16);
+	const g = parseInt(full.slice(2, 4), 16);
+	const b = parseInt(full.slice(4, 6), 16);
+	if ([r, g, b].some((n) => Number.isNaN(n))) return "#ffffff";
+	const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+	return yiq >= 150 ? "#1a1a1a" : "#ffffff";
+}
+
 // Grows a textarea's height to fit its content instead of leaving it a
 // fixed number of rows — reset to "auto" first so it can shrink back down
 // too (e.g. after deleting text), not just grow.
@@ -1048,15 +1065,17 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		});
 
 		if (habits.length === 0 && !this.filterName) {
-			el.createDiv({
-				text: "No habits yet — add your first one below.",
-				cls: "habit-tracker-empty",
+			const empty = el.createDiv({ cls: "habit-tracker-empty" });
+			empty.createDiv({ text: "🌱", cls: "habit-tracker-empty-icon" });
+			empty.createDiv({ text: "No habits yet", cls: "habit-tracker-empty-title" });
+			empty.createDiv({
+				text: "Every streak starts with day one — add your first habit below to get started.",
+				cls: "habit-tracker-empty-subtitle",
 			});
 		} else if (habits.length === 0 && this.filterName) {
-			el.createDiv({
-				text: `No habit named "${this.filterName}" yet.`,
-				cls: "habit-tracker-empty",
-			});
+			const empty = el.createDiv({ cls: "habit-tracker-empty" });
+			empty.createDiv({ text: "🔍", cls: "habit-tracker-empty-icon" });
+			empty.createDiv({ text: `No habit named "${this.filterName}" yet`, cls: "habit-tracker-empty-title" });
 		}
 
 		const list = el.createDiv({ cls: "habit-tracker-list" });
@@ -1106,7 +1125,9 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const view = this.currentView;
 
 		const card = parentEl.createDiv({ cls: "habit-tracker-habit" });
+		card.setAttr("data-habit-id", habit.id);
 		card.style.setProperty("--habit-color", habit.color);
+		card.style.setProperty("--habit-color-contrast", contrastColor(habit.color));
 		const isBreak = habit.type === "break";
 
 		const header = card.createDiv({ cls: "habit-tracker-header" });
@@ -1389,11 +1410,24 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				entries[dateStr] = next;
 			}
 			await this.plugin.persist();
-			this.plugin.refreshAll();
-			if (next) {
+			if (!next) {
+				// Clearing a day isn't a reward moment — refresh immediately.
+				this.plugin.refreshAll();
+				return;
+			}
+			// Checking a day off IS the core reward moment, but refreshAll()
+			// rebuilds the whole DOM, which would destroy this exact cell
+			// mid-animation. Paint the new state directly on it, play a
+			// brief pop, then let the rebuild catch up.
+			cell.style.backgroundColor = habit.color;
+			cell.addClass(doneCls);
+			if (next === "min") cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
+			cell.addClass("habit-tracker-cell-pop");
+			window.setTimeout(() => {
+				this.plugin.refreshAll();
 				const newStreak = computeStats(entries).streak;
 				this.plugin.maybeCelebrate(habit, oldStreak, newStreak);
-			}
+			}, 160);
 		};
 	}
 }
@@ -1632,6 +1666,18 @@ export default class HabitTrackerPlugin extends Plugin {
 			if (oldStreak < m && newStreak >= m) {
 				const label = habit.type === "break" ? "clean streak" : "day streak";
 				new Notice(`🎉 ${newStreak}-${label} on "${habit.name}"! Keep going.`);
+				// The toast fades and is easy to miss — echo the milestone as
+				// a brief glow directly on the streak pill it's about, so
+				// there's an in-card moment to match it.
+				for (const block of this.blocks) {
+					const pill = block.containerEl.querySelector(
+						`.habit-tracker-habit[data-habit-id="${CSS.escape(habit.id)}"] .habit-tracker-pill-streak`
+					);
+					if (pill instanceof HTMLElement) {
+						pill.addClass("habit-tracker-pill-celebrate");
+						window.setTimeout(() => pill.removeClass("habit-tracker-pill-celebrate"), 1400);
+					}
+				}
 				break;
 			}
 		}
