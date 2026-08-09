@@ -279,6 +279,10 @@ body.theme-dark {
 	padding: 7px 10px;
 }
 
+.habit-tracker-modal-walkthrough-btn-hidden {
+	display: none;
+}
+
 .habit-tracker-walkthrough-btn:hover {
 	color: var(--text-normal);
 	background-color: var(--background-modifier-hover);

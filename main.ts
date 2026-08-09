@@ -502,8 +502,8 @@ class HabitFormModal extends Modal {
 			walkthroughBtn.type = "button";
 			walkthroughBtn.onclick = () => {
 				this.opts.walkthrough = true;
-				walkthroughBtn.remove();
-				this.startWalkthrough(contentEl, this.walkthroughRefs!);
+				walkthroughBtn.addClass("habit-tracker-modal-walkthrough-btn-hidden");
+				this.startWalkthrough(contentEl, this.walkthroughRefs!, walkthroughBtn);
 			};
 		}
 
@@ -705,7 +705,7 @@ class HabitFormModal extends Modal {
 	// Next/Back buttons, or naturally by the user filling out/selecting
 	// that step's field directly (typing + Enter/Tab away, picking a
 	// color, choosing Build/Break, checking the commit box).
-	startWalkthrough(contentEl: HTMLElement, refs: WalkthroughRefs) {
+	startWalkthrough(contentEl: HTMLElement, refs: WalkthroughRefs, restartBtn?: HTMLElement) {
 		const lever = (key: keyof HabitLevers) => refs.leverElements[key]!;
 		const steps: WalkthroughStep[] = [
 			{
@@ -812,6 +812,10 @@ class HabitFormModal extends Modal {
 			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
 			contentEl.removeClass("habit-tracker-walkthrough-active");
 			tooltip.remove();
+			// Bring the "Habit Creation Walkthrough" button back (whether the
+			// tour was skipped or finished) so the user can restart it
+			// later instead of it being gone for the rest of the session.
+			restartBtn?.removeClass("habit-tracker-modal-walkthrough-btn-hidden");
 		};
 
 		const showStep = (i: number) => {
