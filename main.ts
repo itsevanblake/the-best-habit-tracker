@@ -1,4 +1,4 @@
-import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice, Platform } from "obsidian";
+import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice } from "obsidian";
 import { createClient, SupabaseClient, Session, RealtimeChannel } from "@supabase/supabase-js";
 
 type HabitType = "build" | "break";
@@ -1444,11 +1444,9 @@ export default class HabitTrackerPlugin extends Plugin {
 			const filterMatch = source.match(/^\s*habit:\s*(.+)\s*$/m);
 			const filterName = filterMatch ? filterMatch[1].trim() : null;
 			const viewMatch = source.match(/^\s*view:\s*(week|month|year|yeardays)\s*$/m);
-			// Year view's wide, horizontally-scrolling grid works well with a
-			// mouse on a desktop pane, but is a poor first impression on a
-			// narrow phone screen — default to Week there instead unless the
-			// note explicitly requests a view.
-			const defaultView: ViewMode = viewMatch ? (viewMatch[1] as ViewMode) : Platform.isMobile ? "week" : "year";
+			// Week is the default on every device unless the note explicitly
+			// requests a different view.
+			const defaultView: ViewMode = viewMatch ? (viewMatch[1] as ViewMode) : "week";
 			const block = new HabitTrackerBlock(el, this, filterName, defaultView);
 			ctx.addChild(block);
 		});
