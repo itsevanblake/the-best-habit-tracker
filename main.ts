@@ -350,6 +350,23 @@ class HabitFormModal extends Modal {
 		contentEl.addClass("habit-tracker-modal");
 		contentEl.createEl("h3", { text: this.opts.title });
 
+		// Plain Enter moves focus to the next field in the form instead of
+		// doing its default thing (submitting, or — in a textarea —
+		// inserting a newline). Shift+Enter is the escape hatch: in fields
+		// where a newline actually makes sense, it's let through instead of
+		// advancing.
+		const focusOrder: HTMLElement[] = [];
+		const advanceOnEnter = (el: HTMLElement, allowShiftNewline = false) => {
+			focusOrder.push(el);
+			el.addEventListener("keydown", (e: KeyboardEvent) => {
+				if (e.key !== "Enter") return;
+				if (allowShiftNewline && e.shiftKey) return;
+				e.preventDefault();
+				const next = focusOrder[focusOrder.indexOf(el) + 1];
+				if (next) next.focus();
+			});
+		};
+
 		const nameSetting = new Setting(contentEl).setName("Name");
 		let nameInputEl: HTMLInputElement;
 		nameSetting.addText((text) => {
@@ -360,9 +377,7 @@ class HabitFormModal extends Modal {
 				.onChange((value) => {
 					this.values.name = value;
 				});
-			text.inputEl.addEventListener("keydown", (e) => {
-				if (e.key === "Enter") this.submit();
-			});
+			advanceOnEnter(text.inputEl);
 		});
 
 		// A reusable row: label (fixed, not part of any editable control —
@@ -379,6 +394,7 @@ class HabitFormModal extends Modal {
 				text.inputEl.addClass("habit-tracker-lever-input");
 				text.inputEl.rows = 1;
 				window.setTimeout(() => autoGrow(text.inputEl), 0);
+				advanceOnEnter(text.inputEl, true);
 			});
 			setting.settingEl.addClass("habit-tracker-lever-setting");
 			const info = LEVER_TERM_INFO[key];
@@ -468,6 +484,7 @@ class HabitFormModal extends Modal {
 			commitCheckbox.onchange = () => {
 				this.commitChecked = commitCheckbox.checked;
 			};
+			advanceOnEnter(commitCheckbox);
 			this.commitLabelTextEl = commitRow.createSpan();
 			this.updateCommitLabel();
 		}
@@ -475,6 +492,7 @@ class HabitFormModal extends Modal {
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
 		const submitBtn = footer.createEl("button", { text: this.opts.submitLabel, cls: "mod-cta" });
 		submitBtn.onclick = () => this.submit();
+		focusOrder.push(submitBtn);
 
 		window.setTimeout(() => nameInputEl?.focus(), 0);
 	}
