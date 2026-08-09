@@ -178,6 +178,57 @@ const EXAMPLE_LEVERS: HabitLevers = {
 	linkedGoal: "2026-Q3",
 };
 
+// Definitions grounded directly in James Clear's Atomic Habits framework,
+// matching this vault's own Wiki/Concepts pages (Four Laws of Behavior
+// Change, Habit Loop, Habit Stacking, Identity-Based Habits) rather than
+// generic explanations.
+const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: string }> = {
+	identity: {
+		term: "Identity-Based Habits",
+		definition:
+			'Clear\'s core claim: lasting change works top-down through identity, not bottom-up through outcomes — "not behavior change, not results change, it\'s identity change." Every completed day is a vote for the type of person you\'re becoming.',
+	},
+	stackedAfter: {
+		term: "Habit Stacking",
+		definition:
+			'Law 1, Make It Obvious. Anchor a new habit to one you already do reliably: "After [current habit], I will [new habit]." The trigger habit needs to be automatic — waking up, brushing teeth, making coffee.',
+	},
+	whenWhere: {
+		term: "Implementation Intention",
+		definition:
+			'Also Law 1, Make It Obvious. Clear: "clarity beats motivation" — a specific "I will [behavior] at [time] in [location]" plan beats a vague intention to do something eventually.',
+	},
+	minimumVersion: {
+		term: "The 2-Minute Rule",
+		definition:
+			"Law 3, Make It Easy. Scale any habit down to a version that takes two minutes or less, to remove friction and build consistency before intensity — optimize for the starting line, not the finish line.",
+	},
+	linkedGoal: {
+		term: "Systems Over Goals",
+		definition:
+			'Clear: "You do not rise to the level of your goals. You fall to the level of your systems." A habit is the system — this links it to the goal it actually serves.',
+	},
+};
+
+const TYPE_INFO = {
+	term: "Build vs. Break",
+	definition:
+		"The Four Laws of Behavior Change (make it obvious/attractive/easy/satisfying) work in reverse to break a bad habit: make it invisible, unattractive, difficult, and unsatisfying — same framework, applied backward.",
+};
+
+// Small "?" toggle next to a Setting's name that shows/hides a definition
+// + example box directly beneath it.
+function addHelpToggle(setting: Setting, container: HTMLElement, term: string, definition: string, example: string) {
+	const helpBtn = setting.nameEl.createSpan({ text: "?", cls: "habit-tracker-help-btn" });
+	const infoBox = container.createDiv({ cls: "habit-tracker-help-box" });
+	infoBox.createEl("strong", { text: term });
+	infoBox.createEl("p", { text: definition });
+	infoBox.createEl("p", { cls: "habit-tracker-help-example", text: `Example: "${example}"` });
+	helpBtn.onclick = () => {
+		infoBox.toggleClass("habit-tracker-help-box-visible", !infoBox.hasClass("habit-tracker-help-box-visible"));
+	};
+}
+
 interface HabitFormOptions {
 	title: string;
 	submitLabel: string;
@@ -241,7 +292,7 @@ class HabitFormModal extends Modal {
 			swatches.push(swatch);
 		});
 
-		new Setting(contentEl).setName("Type").addDropdown((dd) => {
+		const typeSetting = new Setting(contentEl).setName("Type").addDropdown((dd) => {
 			dd.addOption("build", "Build (start a habit)");
 			dd.addOption("break", "Break (quit a habit)");
 			dd.setValue(this.values.type);
@@ -249,6 +300,7 @@ class HabitFormModal extends Modal {
 				this.values.type = v as HabitType;
 			});
 		});
+		addHelpToggle(typeSetting, contentEl, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
 
 		contentEl.createEl("h4", { text: "Optional — Atomic Habits levers" });
 		contentEl.createEl("p", {
@@ -281,6 +333,8 @@ class HabitFormModal extends Modal {
 				window.setTimeout(() => autoGrow(text.inputEl), 0);
 			});
 			setting.settingEl.addClass("habit-tracker-lever-setting");
+			const info = LEVER_TERM_INFO[row.key];
+			addHelpToggle(setting, contentEl, info.term, info.definition, row.example);
 		}
 
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });

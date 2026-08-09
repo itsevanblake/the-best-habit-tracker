@@ -464,6 +464,55 @@
 	font-family: inherit;
 }
 
+.habit-tracker-help-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin-left: 6px;
+	border-radius: 50%;
+	background-color: var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: 0.68em;
+	font-weight: 700;
+	cursor: pointer;
+	vertical-align: middle;
+	user-select: none;
+}
+
+.habit-tracker-help-btn:hover {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.habit-tracker-help-box {
+	display: none;
+	margin: -4px 0 12px;
+	padding: 8px 12px;
+	border-radius: 6px;
+	border-left: 2px solid var(--interactive-accent);
+	background-color: var(--background-secondary);
+	font-size: 0.8em;
+	color: var(--text-muted);
+}
+
+.habit-tracker-help-box-visible {
+	display: block;
+}
+
+.habit-tracker-help-box strong {
+	color: var(--text-normal);
+}
+
+.habit-tracker-help-box p {
+	margin: 4px 0 0;
+}
+
+.habit-tracker-help-example {
+	font-style: italic;
+}
+
 .habit-tracker-swatch-row {
 	display: flex;
 	gap: 10px;
