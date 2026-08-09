@@ -597,7 +597,7 @@ class HabitFormModal extends Modal {
 			},
 			{
 				title: "4. Pick a color",
-				body: "Give the habit a color so its heatmap stands out from the others at a glance. Click a preset, or pick and save a custom one from the wheel.",
+				body: "Give the habit a color so its appearance stands out from the others at a glance. Click a preset color, or pick and save a custom one from the wheel.",
 				target: refs.swatchRow,
 			},
 			{
