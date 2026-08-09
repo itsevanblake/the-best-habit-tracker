@@ -18,7 +18,6 @@ interface HabitDefinition {
 	reward?: string; // Reward, Law 4 (Make It Satisfying): the immediate payoff tied to completion.
 	// Also part of Atomic Habits, but not part of the 4-law formula above.
 	identity?: string; // "I am someone who..." — identity-based habits: the vote this habit casts for who you're becoming.
-	whenWhere?: string; // Implementation intention detail: "at [time] in [location]."
 	linkedGoal?: string; // Note name of the Goals/Quarters file this habit is the "system" for.
 }
 
@@ -178,7 +177,6 @@ interface HabitLevers {
 	reward: string; // Reward — Law 4
 	// Also part of Atomic Habits, not part of the 4-law formula itself.
 	identity: string;
-	whenWhere: string;
 	linkedGoal: string;
 }
 
@@ -191,7 +189,7 @@ interface HabitFormValues extends HabitLevers {
 // The Complete Habit Formula fields, matching the Four Laws 1:1.
 const FORMULA_KEYS: (keyof HabitLevers)[] = ["stackedAfter", "craving", "minimumVersion", "reward"];
 // Also part of Atomic Habits, but not part of the 4-law formula sentence.
-const OTHER_LEVER_KEYS: (keyof HabitLevers)[] = ["identity", "whenWhere", "linkedGoal"];
+const OTHER_LEVER_KEYS: (keyof HabitLevers)[] = ["identity", "linkedGoal"];
 
 // Shown as each field's placeholder hint for a brand-new habit (nothing
 // set yet). Native placeholder text is inherently the right tool here: it
@@ -206,7 +204,6 @@ const EXAMPLE_LEVERS: HabitLevers = {
 	minimumVersion: "Open my workspace dashboard and check off exactly one high-priority task",
 	reward: "Immediately check my visual streak counter",
 	identity: "I am someone who follows through on what matters most",
-	whenWhere: "Every morning, at my desk",
 	linkedGoal: "2026-Q3",
 };
 
@@ -240,11 +237,6 @@ const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: str
 		definition:
 			'Clear\'s core claim: lasting change works top-down through identity, not bottom-up through outcomes — "not behavior change, not results change, it\'s identity change." Every completed day is a vote for the type of person you\'re becoming.',
 	},
-	whenWhere: {
-		term: "Implementation Intention",
-		definition:
-			'Also Law 1, Make It Obvious. Clear: "clarity beats motivation" — a specific "I will [behavior] at [time] in [location]" plan beats a vague intention to do something eventually.',
-	},
 	linkedGoal: {
 		term: "Systems Over Goals",
 		definition:
@@ -258,7 +250,6 @@ const LEVER_LABELS: Record<keyof HabitLevers, string> = {
 	minimumVersion: "Routine",
 	reward: "Reward",
 	identity: "Identity",
-	whenWhere: "When/Where",
 	linkedGoal: "Goal",
 };
 
@@ -271,7 +262,6 @@ const LEVER_HELP_REASON: Record<keyof HabitLevers, string> = {
 	minimumVersion: "a routine scaled down to under two minutes removes the excuse not to start",
 	reward: "an immediate payoff is what makes the loop worth repeating tomorrow",
 	identity: "naming who you're becoming is what actually makes a habit stick",
-	whenWhere: 'a specific time and place beats a vague "someday"',
 	linkedGoal: "connecting it to what it's actually for keeps the system pointed at something real",
 };
 
@@ -351,7 +341,6 @@ class HabitFormModal extends Modal {
 			minimumVersion: opts.initial?.minimumVersion ?? "",
 			reward: opts.initial?.reward ?? "",
 			identity: opts.initial?.identity ?? "",
-			whenWhere: opts.initial?.whenWhere ?? "",
 			linkedGoal: opts.initial?.linkedGoal ?? "",
 		};
 	}
@@ -520,7 +509,6 @@ class HabitFormModal extends Modal {
 			identity: this.values.identity.trim(),
 			stackedAfter: this.values.stackedAfter.trim(),
 			craving: this.values.craving.trim(),
-			whenWhere: this.values.whenWhere.trim(),
 			minimumVersion: this.values.minimumVersion.trim(),
 			reward: this.values.reward.trim(),
 			linkedGoal: this.values.linkedGoal.trim(),
@@ -776,7 +764,6 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 							minimumVersion: values.minimumVersion || undefined,
 							reward: values.reward || undefined,
 							identity: values.identity || undefined,
-							whenWhere: values.whenWhere || undefined,
 							linkedGoal: values.linkedGoal || undefined,
 						};
 						this.plugin.data.habits.push(habit);
@@ -843,7 +830,6 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					habit.minimumVersion = values.minimumVersion || undefined;
 					habit.reward = values.reward || undefined;
 					habit.identity = values.identity || undefined;
-					habit.whenWhere = values.whenWhere || undefined;
 					habit.linkedGoal = values.linkedGoal || undefined;
 					await this.plugin.persist();
 					this.plugin.refreshAll();
@@ -870,7 +856,6 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 		const triggerBits: string[] = [];
 		if (habit.stackedAfter) triggerBits.push(`⛓ Trigger: ${habit.stackedAfter}`);
-		if (habit.whenWhere) triggerBits.push(`📍 ${habit.whenWhere}`);
 		if (triggerBits.length) {
 			card.createDiv({ text: triggerBits.join("   ·   "), cls: "habit-tracker-meta-line" });
 		}
