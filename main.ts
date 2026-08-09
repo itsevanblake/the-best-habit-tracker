@@ -806,15 +806,23 @@ class HabitFormModal extends Modal {
 			tooltip.style.top = `${top}px`;
 			tooltip.style.left = `${left}px`;
 
-			// scrollIntoView on the highlighted field alone doesn't account
-			// for the tooltip rendered just below it — on a tall step near
-			// the bottom of the form, the field could end up centered while
-			// the tooltip explaining it spills past the visible edge.
-			// Nudge the extra distance into view too.
-			const tooltipBottom = top + tooltip.offsetHeight;
-			const visibleBottom = contentEl.scrollTop + contentEl.clientHeight;
-			if (tooltipBottom > visibleBottom) {
-				contentEl.scrollBy({ top: tooltipBottom - visibleBottom + 12, behavior: "smooth" });
+			// The tooltip is position: absolute, so on a step near the
+			// bottom of the form its true bottom edge can sit past
+			// contentEl's normal-flow content height — contentEl.scrollHeight
+			// (and therefore how far it can actually scroll) doesn't
+			// reliably grow to include it, so scrolling alone can leave the
+			// tooltip's bottom permanently clipped by the modal's own edge
+			// with nowhere further to scroll to. Force real scrollable room
+			// to exist by padding contentEl out to the tooltip's bottom
+			// before scrolling to it.
+			const tooltipBottom = top + tooltip.offsetHeight + 16;
+			if (tooltipBottom > contentEl.scrollHeight) {
+				contentEl.style.paddingBottom = `${tooltipBottom - contentEl.scrollHeight + parseFloat(contentEl.style.paddingBottom || "0")}px`;
+			}
+			const maxScrollTop = Math.max(0, contentEl.scrollHeight - contentEl.clientHeight);
+			const wantedScrollTop = Math.min(maxScrollTop, tooltipBottom - contentEl.clientHeight);
+			if (wantedScrollTop > contentEl.scrollTop) {
+				contentEl.scrollTo({ top: wantedScrollTop, behavior: "smooth" });
 			}
 		};
 
@@ -822,6 +830,7 @@ class HabitFormModal extends Modal {
 			active = false;
 			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
 			contentEl.removeClass("habit-tracker-walkthrough-active");
+			contentEl.style.paddingBottom = "";
 			tooltip.remove();
 			// Bring the "Habit Creation Walkthrough" button back (whether the
 			// tour was skipped or finished) so the user can restart it
