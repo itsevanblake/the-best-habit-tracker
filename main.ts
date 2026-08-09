@@ -9,10 +9,16 @@ interface HabitDefinition {
 	color: string;
 	createdAt: string; // YYYY-MM-DD
 	type?: HabitType; // default "build" — a "break" habit inverts the framing (Clear's four laws apply in reverse to quitting a habit), not the click mechanic: a checked day still means "I succeeded today" (i.e. "I resisted").
-	identity?: string; // "I am someone who..." — Clear's identity-based habits: the vote this habit casts for who you're becoming.
-	stackedAfter?: string; // Law 1 (Make it Obvious): habit stacking anchor, "After I ___, I will do this."
-	whenWhere?: string; // Law 1: implementation intention, "I will do this at [time] in [location]."
-	minimumVersion?: string; // Law 3 (Make it Easy): the 2-minute-rule fallback version for a low-friction day.
+	// The Complete Habit Formula — Clear's own four-part sentence structure,
+	// one field per Law of Behavior Change, 1:1:
+	// "After I [trigger], I will [routine]. [craving hook]. Once done, [reward]."
+	stackedAfter?: string; // Trigger, Law 1 (Make It Obvious): the cue/environment. "After I ___"
+	craving?: string; // Craving, Law 2 (Make It Attractive): what makes you want to, e.g. temptation bundling.
+	minimumVersion?: string; // Routine, Law 3 (Make It Easy): the actual scaled-down, <2-minute action.
+	reward?: string; // Reward, Law 4 (Make It Satisfying): the immediate payoff tied to completion.
+	// Also part of Atomic Habits, but not part of the 4-law formula above.
+	identity?: string; // "I am someone who..." — identity-based habits: the vote this habit casts for who you're becoming.
+	whenWhere?: string; // Implementation intention detail: "at [time] in [location]."
 	linkedGoal?: string; // Note name of the Goals/Quarters file this habit is the "system" for.
 }
 
@@ -163,10 +169,16 @@ function nextEntryValue(current: EntryValue | undefined): EntryValue | undefined
 }
 
 interface HabitLevers {
+	// The Complete Habit Formula — Clear's own four-part sentence, one
+	// field per Law, in order:
+	// "After I [stackedAfter], I will [minimumVersion]. [craving]. Once done, [reward]."
+	stackedAfter: string; // Trigger — Law 1
+	craving: string; // Craving — Law 2
+	minimumVersion: string; // Routine — Law 3
+	reward: string; // Reward — Law 4
+	// Also part of Atomic Habits, not part of the 4-law formula itself.
 	identity: string;
-	stackedAfter: string;
 	whenWhere: string;
-	minimumVersion: string;
 	linkedGoal: string;
 }
 
@@ -176,21 +188,25 @@ interface HabitFormValues extends HabitLevers {
 	type: HabitType;
 }
 
+// The Complete Habit Formula fields, matching the Four Laws 1:1.
+const FORMULA_KEYS: (keyof HabitLevers)[] = ["stackedAfter", "craving", "minimumVersion", "reward"];
+// Also part of Atomic Habits, but not part of the 4-law formula sentence.
+const OTHER_LEVER_KEYS: (keyof HabitLevers)[] = ["identity", "whenWhere", "linkedGoal"];
+
 // Shown as each field's placeholder hint for a brand-new habit (nothing
 // set yet). Native placeholder text is inherently the right tool here: it
 // renders dimmed automatically, and disappears the instant that specific
-// field is typed into — no custom clear-on-type logic needed, and it
-// can never be accidentally submitted as real data (placeholders aren't
-// part of a field's value).
-// All five describe the same example habit (a morning run, matching the
-// Name field's own "e.g. Morning run" placeholder) rather than five
-// unrelated fragments, so the whole form reads as one coherent worked
-// example instead of disconnected hints.
+// field is typed into.
+// All seven describe the same example habit — a desk/coffee/task/streak
+// morning-work routine — so the whole form reads as one coherent worked
+// example instead of disconnected fragments.
 const EXAMPLE_LEVERS: HabitLevers = {
-	identity: "I am someone who takes care of my body",
-	stackedAfter: "After I brush my teeth in the morning",
-	whenWhere: "6am, right outside my front door",
-	minimumVersion: "Just put on my running shoes",
+	stackedAfter: "After I sit down at my desk with my morning coffee",
+	craving: "The fresh coffee is the reward for starting — I only drink it at my desk",
+	minimumVersion: "Open my workspace dashboard and check off exactly one high-priority task",
+	reward: "Immediately check my visual streak counter",
+	identity: "I am someone who follows through on what matters most",
+	whenWhere: "Every morning, at my desk",
 	linkedGoal: "2026-Q3",
 };
 
@@ -199,25 +215,35 @@ const EXAMPLE_LEVERS: HabitLevers = {
 // Change, Habit Loop, Habit Stacking, Identity-Based Habits) rather than
 // generic explanations.
 const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: string }> = {
+	stackedAfter: {
+		term: "Trigger — Law 1, Make It Obvious",
+		definition:
+			'The cue. Often a habit stack anchored to something you already do reliably: "After [current habit], I will [new habit]." The trigger habit needs to be automatic — waking up, brushing teeth, sitting down with coffee.',
+	},
+	craving: {
+		term: "Craving — Law 2, Make It Attractive",
+		definition:
+			"The want that pulls you into the habit. Clear's temptation bundling: pair the habit with something you already desire, so the craving for that thing becomes attached to the habit itself.",
+	},
+	minimumVersion: {
+		term: "Routine — Law 3, Make It Easy",
+		definition:
+			"The actual response — scaled down to a version that takes two minutes or less, to remove friction and build consistency before intensity. Optimize for the starting line, not the finish line.",
+	},
+	reward: {
+		term: "Reward — Law 4, Make It Satisfying",
+		definition:
+			'The immediate payoff tied to completion — what makes the loop worth repeating. Clear: habit trackers and "don\'t break the chain" work because they supply this reward instantly, when the real-world payoff is too delayed to feel.',
+	},
 	identity: {
 		term: "Identity-Based Habits",
 		definition:
 			'Clear\'s core claim: lasting change works top-down through identity, not bottom-up through outcomes — "not behavior change, not results change, it\'s identity change." Every completed day is a vote for the type of person you\'re becoming.',
 	},
-	stackedAfter: {
-		term: "Habit Stacking",
-		definition:
-			'Law 1, Make It Obvious. Anchor a new habit to one you already do reliably: "After [current habit], I will [new habit]." The trigger habit needs to be automatic — waking up, brushing teeth, making coffee.',
-	},
 	whenWhere: {
 		term: "Implementation Intention",
 		definition:
 			'Also Law 1, Make It Obvious. Clear: "clarity beats motivation" — a specific "I will [behavior] at [time] in [location]" plan beats a vague intention to do something eventually.',
-	},
-	minimumVersion: {
-		term: "The 2-Minute Rule",
-		definition:
-			"Law 3, Make It Easy. Scale any habit down to a version that takes two minutes or less, to remove friction and build consistency before intensity — optimize for the starting line, not the finish line.",
 	},
 	linkedGoal: {
 		term: "Systems Over Goals",
@@ -227,10 +253,12 @@ const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: str
 };
 
 const LEVER_LABELS: Record<keyof HabitLevers, string> = {
+	stackedAfter: "Trigger",
+	craving: "Craving",
+	minimumVersion: "Routine",
+	reward: "Reward",
 	identity: "Identity",
-	stackedAfter: "Stack",
 	whenWhere: "When/Where",
-	minimumVersion: "Minimum",
 	linkedGoal: "Goal",
 };
 
@@ -238,10 +266,12 @@ const LEVER_LABELS: Record<keyof HabitLevers, string> = {
 // field is left blank — distinct from the fuller definitions in
 // LEVER_TERM_INFO, which live in the "?" help toggles.
 const LEVER_HELP_REASON: Record<keyof HabitLevers, string> = {
-	identity: "naming who you're becoming is what actually makes a habit stick",
 	stackedAfter: "anchoring it to a habit you already do makes the cue impossible to miss",
+	craving: "tying the habit to something you already want is what pulls you into starting",
+	minimumVersion: "a routine scaled down to under two minutes removes the excuse not to start",
+	reward: "an immediate payoff is what makes the loop worth repeating tomorrow",
+	identity: "naming who you're becoming is what actually makes a habit stick",
 	whenWhere: 'a specific time and place beats a vague "someday"',
-	minimumVersion: "a tiny fallback version keeps your streak alive on hard days",
 	linkedGoal: "connecting it to what it's actually for keeps the system pointed at something real",
 };
 
@@ -251,37 +281,33 @@ const TYPE_INFO = {
 		"The Four Laws of Behavior Change (make it obvious/attractive/easy/satisfying) work in reverse to break a bad habit: make it invisible, unattractive, difficult, and unsatisfying — same framework, applied backward.",
 };
 
-// How each field in this form maps to one of Clear's Four Laws of
-// Behavior Change — grounded in this vault's own Wiki/Concepts/Four Laws
-// of Behavior Change page. Law 2 and Law 4 don't have a dedicated text
-// field (Attractive is closer to the Identity/why; Satisfying is what the
-// tracker itself — the heatmap, streaks, milestone notices — supplies),
-// so they're included here for the full picture even though there's
-// nothing to type for them.
+// The Complete Habit Formula, exactly as Clear breaks it down — one law
+// per field, 1:1, grounded in this vault's own Wiki/Concepts/Four Laws of
+// Behavior Change page.
 const FOUR_LAWS: { law: string; stage: string; fields: string; text: string }[] = [
 	{
 		law: "Law 1 — Make It Obvious",
 		stage: "cue",
-		fields: "Stack, When/Where",
-		text: "Surface the cue. Habit stacking and implementation intentions make the trigger impossible to miss.",
+		fields: "Trigger",
+		text: "Surface the cue. The environment is already set up so the trigger is impossible to miss.",
 	},
 	{
 		law: "Law 2 — Make It Attractive",
 		stage: "craving",
-		fields: "Identity",
-		text: "Pair the habit with the identity you want — the craving is wanting to BE that kind of person, not just complete the task.",
+		fields: "Craving",
+		text: "The sensory or emotional pull that's directly tied to taking the action — temptation bundling.",
 	},
 	{
 		law: "Law 3 — Make It Easy",
 		stage: "response",
-		fields: "Minimum",
-		text: "Reduce friction with the 2-minute rule — a version so small there's no excuse not to start.",
+		fields: "Routine",
+		text: "The action is scaled down to a tiny, friction-free step — takes less than two minutes.",
 	},
 	{
 		law: "Law 4 — Make It Satisfying",
 		stage: "reward",
-		fields: "The tracker itself",
-		text: "Supply an immediate reward. This is exactly what the heatmap, streak, and milestone notices below are for — real payoffs are usually too delayed to feel on their own.",
+		fields: "Reward",
+		text: "The instant, visible payoff tied to completion — reinforces the loop so it repeats tomorrow.",
 	},
 ];
 
@@ -320,10 +346,12 @@ class HabitFormModal extends Modal {
 			name: opts.initial?.name ?? "",
 			color: opts.initial?.color ?? PALETTE[0],
 			type: opts.initial?.type ?? "build",
-			identity: opts.initial?.identity ?? "",
 			stackedAfter: opts.initial?.stackedAfter ?? "",
-			whenWhere: opts.initial?.whenWhere ?? "",
+			craving: opts.initial?.craving ?? "",
 			minimumVersion: opts.initial?.minimumVersion ?? "",
+			reward: opts.initial?.reward ?? "",
+			identity: opts.initial?.identity ?? "",
+			whenWhere: opts.initial?.whenWhere ?? "",
 			linkedGoal: opts.initial?.linkedGoal ?? "",
 		};
 	}
@@ -388,16 +416,33 @@ class HabitFormModal extends Modal {
 		});
 		addHelpToggle(typeSetting, contentEl, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
 
-		contentEl.createEl("h4", { text: "Atomic Habits levers" });
+		// A reusable row: label (fixed, not part of any editable control —
+		// can't be typed into or deleted) + auto-growing textarea (native
+		// placeholder clears itself the instant that specific field is
+		// typed into) + "?" help toggle.
+		const renderLeverRow = (key: keyof HabitLevers) => {
+			const setting = new Setting(contentEl).setName(LEVER_LABELS[key]).addTextArea((text) => {
+				if (this.isNew) text.setPlaceholder(EXAMPLE_LEVERS[key]);
+				text.setValue(this.values[key]).onChange((v) => {
+					this.values[key] = v;
+					autoGrow(text.inputEl);
+				});
+				text.inputEl.addClass("habit-tracker-lever-input");
+				text.inputEl.rows = 1;
+				window.setTimeout(() => autoGrow(text.inputEl), 0);
+			});
+			setting.settingEl.addClass("habit-tracker-lever-setting");
+			const info = LEVER_TERM_INFO[key];
+			addHelpToggle(setting, contentEl, info.term, info.definition, EXAMPLE_LEVERS[key]);
+		};
+
+		contentEl.createEl("h4", { text: "The Complete Habit Formula" });
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
-			text: this.isNew
-				? "Filling these out is part of committing to the habit. Each label is fixed — you're only ever typing into the box beside it. The grey hint text shows an example and disappears the moment you start typing that field."
-				: "Each label is fixed — you're only ever typing into the box beside it.",
+			text: 'Clear\'s own structure, one field per Law: "After I [Trigger], I will [Routine]. [Craving]. Once done, [Reward]."',
 		});
 
-		// Toggleable panel mapping each field to the specific one of
-		// Clear's Four Laws of Behavior Change it embodies.
+		// Toggleable panel mapping each field to its specific Law.
 		const fourLawsToggle = contentEl.createDiv({
 			cls: "habit-tracker-fourlaws-toggle",
 			text: "📖 How this maps to the 4 Laws of Behavior Change",
@@ -415,34 +460,14 @@ class HabitFormModal extends Modal {
 			fourLawsBox.toggleClass("habit-tracker-fourlaws-box-visible", !fourLawsBox.hasClass("habit-tracker-fourlaws-box-visible"));
 		};
 
-		// Five separate fields rather than one combined box: the label
-		// (Setting.setName) isn't part of any editable control, so it can't
-		// be typed into or deleted, and each field's own native placeholder
-		// clears itself the instant that specific field is typed into —
-		// both were explicit requirements, and both are just how these
-		// primitives already behave, no custom logic required.
-		const leverRows: { label: string; key: keyof HabitLevers; example: string }[] = [
-			{ label: "Identity", key: "identity", example: EXAMPLE_LEVERS.identity },
-			{ label: "Stack", key: "stackedAfter", example: EXAMPLE_LEVERS.stackedAfter },
-			{ label: "When/Where", key: "whenWhere", example: EXAMPLE_LEVERS.whenWhere },
-			{ label: "Minimum", key: "minimumVersion", example: EXAMPLE_LEVERS.minimumVersion },
-			{ label: "Goal", key: "linkedGoal", example: EXAMPLE_LEVERS.linkedGoal },
-		];
-		for (const row of leverRows) {
-			const setting = new Setting(contentEl).setName(row.label).addTextArea((text) => {
-				if (this.isNew) text.setPlaceholder(row.example);
-				text.setValue(this.values[row.key]).onChange((v) => {
-					this.values[row.key] = v;
-					autoGrow(text.inputEl);
-				});
-				text.inputEl.addClass("habit-tracker-lever-input");
-				text.inputEl.rows = 1;
-				window.setTimeout(() => autoGrow(text.inputEl), 0);
-			});
-			setting.settingEl.addClass("habit-tracker-lever-setting");
-			const info = LEVER_TERM_INFO[row.key];
-			addHelpToggle(setting, contentEl, info.term, info.definition, row.example);
-		}
+		for (const key of FORMULA_KEYS) renderLeverRow(key);
+
+		contentEl.createEl("h4", { text: "Also part of Atomic Habits" });
+		contentEl.createEl("p", {
+			cls: "setting-item-description",
+			text: "Not part of the formula sentence above, but still core to the book — identity, the cue's specifics, and what this habit is actually for.",
+		});
+		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key);
 
 		if (this.isNew) {
 			// Wrapping the checkbox and text in a single <label> makes the
@@ -478,15 +503,13 @@ class HabitFormModal extends Modal {
 		}
 		if (this.isNew) {
 			const verb = this.values.type === "break" ? "breaking" : "building";
-			const requiredKeys: (keyof HabitLevers)[] = ["identity", "stackedAfter", "whenWhere", "minimumVersion", "linkedGoal"];
-			for (const key of requiredKeys) {
+			for (const key of [...FORMULA_KEYS, ...OTHER_LEVER_KEYS]) {
 				if (!this.values[key].trim()) {
 					new Notice(`Fill out "${LEVER_LABELS[key]}" — ${LEVER_HELP_REASON[key]}, which will help you with ${verb} this habit.`);
 					return;
 				}
 			}
 			if (!this.commitChecked) {
-				const verb = this.values.type === "break" ? "breaking" : "building";
 				new Notice(`Check "I commit to ${verb} this habit" to continue.`);
 				return;
 			}
@@ -496,8 +519,10 @@ class HabitFormModal extends Modal {
 			name: this.values.name.trim(),
 			identity: this.values.identity.trim(),
 			stackedAfter: this.values.stackedAfter.trim(),
+			craving: this.values.craving.trim(),
 			whenWhere: this.values.whenWhere.trim(),
 			minimumVersion: this.values.minimumVersion.trim(),
+			reward: this.values.reward.trim(),
 			linkedGoal: this.values.linkedGoal.trim(),
 		});
 		this.close();
@@ -746,10 +771,12 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 							color: values.color,
 							createdAt: todayStr(),
 							type: values.type,
-							identity: values.identity || undefined,
 							stackedAfter: values.stackedAfter || undefined,
-							whenWhere: values.whenWhere || undefined,
+							craving: values.craving || undefined,
 							minimumVersion: values.minimumVersion || undefined,
+							reward: values.reward || undefined,
+							identity: values.identity || undefined,
+							whenWhere: values.whenWhere || undefined,
 							linkedGoal: values.linkedGoal || undefined,
 						};
 						this.plugin.data.habits.push(habit);
@@ -811,10 +838,12 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					habit.name = values.name;
 					habit.color = values.color;
 					habit.type = values.type;
-					habit.identity = values.identity || undefined;
 					habit.stackedAfter = values.stackedAfter || undefined;
-					habit.whenWhere = values.whenWhere || undefined;
+					habit.craving = values.craving || undefined;
 					habit.minimumVersion = values.minimumVersion || undefined;
+					habit.reward = values.reward || undefined;
+					habit.identity = values.identity || undefined;
+					habit.whenWhere = values.whenWhere || undefined;
 					habit.linkedGoal = values.linkedGoal || undefined;
 					await this.plugin.persist();
 					this.plugin.refreshAll();
@@ -839,14 +868,20 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		if (habit.identity) {
 			card.createDiv({ text: `→ ${habit.identity}`, cls: "habit-tracker-identity" });
 		}
-		const metaBits: string[] = [];
-		if (habit.stackedAfter) metaBits.push(`⛓ After: ${habit.stackedAfter}`);
-		if (habit.whenWhere) metaBits.push(`📍 ${habit.whenWhere}`);
-		if (metaBits.length) {
-			card.createDiv({ text: metaBits.join("   ·   "), cls: "habit-tracker-meta-line" });
+		const triggerBits: string[] = [];
+		if (habit.stackedAfter) triggerBits.push(`⛓ Trigger: ${habit.stackedAfter}`);
+		if (habit.whenWhere) triggerBits.push(`📍 ${habit.whenWhere}`);
+		if (triggerBits.length) {
+			card.createDiv({ text: triggerBits.join("   ·   "), cls: "habit-tracker-meta-line" });
+		}
+		if (habit.craving) {
+			card.createDiv({ text: `🍯 Craving: ${habit.craving}`, cls: "habit-tracker-meta-line" });
 		}
 		if (habit.minimumVersion) {
-			card.createDiv({ text: `💡 Minimum version: ${habit.minimumVersion}`, cls: "habit-tracker-meta-line" });
+			card.createDiv({ text: `💡 Routine: ${habit.minimumVersion}`, cls: "habit-tracker-meta-line" });
+		}
+		if (habit.reward) {
+			card.createDiv({ text: `🎉 Reward: ${habit.reward}`, cls: "habit-tracker-meta-line" });
 		}
 		if (habit.linkedGoal) {
 			const goalLink = card.createDiv({ text: `🎯 ${habit.linkedGoal}`, cls: "habit-tracker-meta-line habit-tracker-goal-link" });
