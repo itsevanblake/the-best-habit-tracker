@@ -182,10 +182,14 @@ interface HabitFormValues extends HabitLevers {
 // field is typed into — no custom clear-on-type logic needed, and it
 // can never be accidentally submitted as real data (placeholders aren't
 // part of a field's value).
+// All five describe the same example habit (a morning run, matching the
+// Name field's own "e.g. Morning run" placeholder) rather than five
+// unrelated fragments, so the whole form reads as one coherent worked
+// example instead of disconnected hints.
 const EXAMPLE_LEVERS: HabitLevers = {
 	identity: "I am someone who takes care of my body",
-	stackedAfter: "I brush my teeth in the morning",
-	whenWhere: "7am, in my bedroom",
+	stackedAfter: "After I brush my teeth in the morning",
+	whenWhere: "6am, right outside my front door",
 	minimumVersion: "Just put on my running shoes",
 	linkedGoal: "2026-Q3",
 };
