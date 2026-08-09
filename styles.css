@@ -453,6 +453,19 @@
 	padding: 4px 0 8px;
 }
 
+.habit-tracker-levers-box {
+	width: 100%;
+	font-family: var(--font-monospace, monospace);
+	font-size: 0.85em;
+	line-height: 1.6;
+	padding: 10px 12px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	background-color: var(--background-secondary);
+	color: var(--text-normal);
+	resize: vertical;
+}
+
 .habit-tracker-swatch {
 	width: 26px;
 	height: 26px;

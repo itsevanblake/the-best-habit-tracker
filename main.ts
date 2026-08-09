@@ -142,15 +142,52 @@ function nextEntryValue(current: EntryValue | undefined): EntryValue | undefined
 	return undefined;
 }
 
-interface HabitFormValues {
-	name: string;
-	color: string;
-	type: HabitType;
+interface HabitLevers {
 	identity: string;
 	stackedAfter: string;
 	whenWhere: string;
 	minimumVersion: string;
 	linkedGoal: string;
+}
+
+interface HabitFormValues extends HabitLevers {
+	name: string;
+	color: string;
+	type: HabitType;
+}
+
+// All five Atomic Habits lever fields live in one combined textarea instead
+// of five separate inputs — reads as one cohesive "design this habit" box.
+// Always emitting all five labeled lines (blank after the colon where
+// unset) means the box always shows the expected format, in both the "New
+// habit" and "Edit habit" forms, with zero risk of storing placeholder
+// junk: a blank value after a label parses back out to "" and is dropped.
+function leversToText(v: HabitLevers): string {
+	return [
+		`Identity: ${v.identity}`,
+		`Stack: ${v.stackedAfter}`,
+		`When/Where: ${v.whenWhere}`,
+		`Minimum: ${v.minimumVersion}`,
+		`Goal: ${v.linkedGoal}`,
+	].join("\n");
+}
+
+function parseLevers(text: string): HabitLevers {
+	const result: HabitLevers = { identity: "", stackedAfter: "", whenWhere: "", minimumVersion: "", linkedGoal: "" };
+	const lineRe = /^\s*(identity|stack|when\/where|when|minimum(?:\s*version)?|linked\s*goal|goal)\s*:\s*(.*)$/i;
+	for (const rawLine of text.split("\n")) {
+		const m = rawLine.match(lineRe);
+		if (!m) continue;
+		const label = m[1].toLowerCase().replace(/\s+/g, "");
+		const value = m[2].trim();
+		if (!value) continue;
+		if (label === "identity") result.identity = value;
+		else if (label === "stack") result.stackedAfter = value;
+		else if (label === "when/where" || label === "when") result.whenWhere = value;
+		else if (label.startsWith("minimum")) result.minimumVersion = value;
+		else if (label === "goal" || label === "linkedgoal") result.linkedGoal = value;
+	}
+	return result;
 }
 
 interface HabitFormOptions {
@@ -224,51 +261,17 @@ class HabitFormModal extends Modal {
 		});
 
 		contentEl.createEl("h4", { text: "Optional — Atomic Habits levers" });
+		contentEl.createEl("p", {
+			cls: "setting-item-description",
+			text: "Fill in whichever lines are useful; leave the rest blank. Keep the labels as-is — that's how it gets read back out.",
+		});
 
-		new Setting(contentEl)
-			.setName("Identity")
-			.setDesc('The person this habit is evidence for, e.g. "I am someone who never misses a workout."')
-			.addText((text) =>
-				text.setValue(this.values.identity).onChange((v) => {
-					this.values.identity = v;
-				})
-			);
-
-		new Setting(contentEl)
-			.setName("Habit stack")
-			.setDesc('Anchor to an existing habit: "After I ___"')
-			.addText((text) =>
-				text.setPlaceholder("my morning coffee").setValue(this.values.stackedAfter).onChange((v) => {
-					this.values.stackedAfter = v;
-				})
-			);
-
-		new Setting(contentEl)
-			.setName("When / where")
-			.setDesc("Implementation intention, e.g. \"7am, kitchen\"")
-			.addText((text) =>
-				text.setValue(this.values.whenWhere).onChange((v) => {
-					this.values.whenWhere = v;
-				})
-			);
-
-		new Setting(contentEl)
-			.setName("Minimum version")
-			.setDesc("The 2-minute-rule fallback for a low-friction day, e.g. \"just put on running shoes.\"")
-			.addText((text) =>
-				text.setValue(this.values.minimumVersion).onChange((v) => {
-					this.values.minimumVersion = v;
-				})
-			);
-
-		new Setting(contentEl)
-			.setName("Linked goal")
-			.setDesc("Note name of the Goals/Quarters file this habit is the system for, e.g. \"2026-Q3\"")
-			.addText((text) =>
-				text.setValue(this.values.linkedGoal).onChange((v) => {
-					this.values.linkedGoal = v;
-				})
-			);
+		const leversBox = contentEl.createEl("textarea", { cls: "habit-tracker-levers-box" });
+		leversBox.value = leversToText(this.values);
+		leversBox.rows = 5;
+		leversBox.addEventListener("input", () => {
+			Object.assign(this.values, parseLevers(leversBox.value));
+		});
 
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
 		const submitBtn = footer.createEl("button", { text: this.opts.submitLabel, cls: "mod-cta" });
