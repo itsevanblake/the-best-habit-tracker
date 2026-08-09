@@ -564,6 +564,25 @@
 	transform: scale(1.1);
 }
 
+.habit-tracker-commit-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 16px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background-color: var(--background-secondary);
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.habit-tracker-commit-checkbox {
+	width: 18px;
+	height: 18px;
+	cursor: pointer;
+	flex-shrink: 0;
+}
+
 .habit-tracker-modal-footer {
 	display: flex;
 	justify-content: flex-end;
@@ -598,6 +617,11 @@
 
 	.habit-tracker-add-card {
 		padding: 16px;
+	}
+
+	.habit-tracker-commit-checkbox {
+		width: 24px;
+		height: 24px;
 	}
 
 	/* Tap feedback in place of hover feedback. */

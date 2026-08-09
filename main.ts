@@ -249,6 +249,8 @@ class HabitFormModal extends Modal {
 	opts: HabitFormOptions;
 	values: HabitFormValues;
 	isNew: boolean;
+	commitChecked = false;
+	commitLabelTextEl: HTMLElement;
 
 	constructor(app: App, opts: HabitFormOptions) {
 		super(app);
@@ -321,14 +323,17 @@ class HabitFormModal extends Modal {
 			dd.setValue(this.values.type);
 			dd.onChange((v) => {
 				this.values.type = v as HabitType;
+				this.updateCommitLabel();
 			});
 		});
 		addHelpToggle(typeSetting, contentEl, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
 
-		contentEl.createEl("h4", { text: "Optional — Atomic Habits levers" });
+		contentEl.createEl("h4", { text: this.isNew ? "Required — Atomic Habits levers" : "Optional — Atomic Habits levers" });
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
-			text: "Each label is fixed — you're only ever typing into the box beside it. For a new habit, the grey hint text shows an example and disappears the moment you start typing that field.",
+			text: this.isNew
+				? "Filling these out is part of committing to the habit. Each label is fixed — you're only ever typing into the box beside it. The grey hint text shows an example and disappears the moment you start typing that field."
+				: "Each label is fixed — you're only ever typing into the box beside it.",
 		});
 
 		// Five separate fields rather than one combined box: the label
@@ -360,6 +365,20 @@ class HabitFormModal extends Modal {
 			addHelpToggle(setting, contentEl, info.term, info.definition, row.example);
 		}
 
+		if (this.isNew) {
+			// Wrapping the checkbox and text in a single <label> makes the
+			// whole row clickable, not just the small checkbox itself.
+			const commitRow = contentEl.createEl("label", { cls: "habit-tracker-commit-row" });
+			const commitCheckbox = commitRow.createEl("input", { cls: "habit-tracker-commit-checkbox" });
+			commitCheckbox.type = "checkbox";
+			commitCheckbox.checked = this.commitChecked;
+			commitCheckbox.onchange = () => {
+				this.commitChecked = commitCheckbox.checked;
+			};
+			this.commitLabelTextEl = commitRow.createSpan();
+			this.updateCommitLabel();
+		}
+
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
 		const submitBtn = footer.createEl("button", { text: this.opts.submitLabel, cls: "mod-cta" });
 		submitBtn.onclick = () => this.submit();
@@ -367,10 +386,36 @@ class HabitFormModal extends Modal {
 		window.setTimeout(() => nameInputEl?.focus(), 0);
 	}
 
+	updateCommitLabel() {
+		if (!this.commitLabelTextEl) return;
+		const verb = this.values.type === "break" ? "breaking" : "building";
+		this.commitLabelTextEl.setText(`I commit to ${verb} this habit`);
+	}
+
 	submit() {
 		if (!this.values.name.trim()) {
 			new Notice("Habit needs a name.");
 			return;
+		}
+		if (this.isNew) {
+			const required: [string, string][] = [
+				[this.values.identity, "Identity"],
+				[this.values.stackedAfter, "Stack"],
+				[this.values.whenWhere, "When/Where"],
+				[this.values.minimumVersion, "Minimum"],
+				[this.values.linkedGoal, "Goal"],
+			];
+			for (const [value, label] of required) {
+				if (!value.trim()) {
+					new Notice(`"${label}" is required to create a new habit.`);
+					return;
+				}
+			}
+			if (!this.commitChecked) {
+				const verb = this.values.type === "break" ? "breaking" : "building";
+				new Notice(`Check "I commit to ${verb} this habit" to continue.`);
+				return;
+			}
 		}
 		this.opts.onSubmit({
 			...this.values,
