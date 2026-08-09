@@ -1296,6 +1296,56 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			this.plugin.settings.celebrationEffectsEnabled = checkbox.checked;
 			await this.plugin.saveSettings();
 		};
+		panel.createEl("h4", { text: "Danger Zone", cls: "habit-tracker-settings-danger-heading" });
+		const resetBtn = panel.createEl("button", { text: "🗑️ Reset Habit Streak Data", cls: "habit-tracker-settings-danger-btn" });
+		resetBtn.type = "button";
+
+		const resetForm = panel.createDiv({ cls: "habit-tracker-reset-form" });
+		resetBtn.onclick = () => {
+			resetForm.toggleClass("habit-tracker-reset-form-visible", !resetForm.hasClass("habit-tracker-reset-form-visible"));
+		};
+
+		resetForm.createEl("label", { text: "What to reset", cls: "habit-tracker-settings-label" });
+		const scopeSelect = resetForm.createEl("select", { cls: "dropdown habit-tracker-reset-scope" });
+		scopeSelect.createEl("option", { text: "All habits", value: "__all__" });
+		for (const h of this.plugin.data.habits) {
+			scopeSelect.createEl("option", { text: h.name, value: h.id });
+		}
+
+		resetForm.createEl("p", {
+			cls: "habit-tracker-reset-warning",
+			text: "This permanently deletes all check-in history (streaks, totals, the heatmap) for the selected scope. The habit itself isn't deleted. This cannot be undone.",
+		});
+
+		resetForm.createEl("label", { text: 'Type "delete" to confirm', cls: "habit-tracker-settings-label" });
+		const confirmInput = resetForm.createEl("input", { cls: "habit-tracker-reset-confirm-input" });
+		confirmInput.type = "text";
+		confirmInput.placeholder = "delete";
+		confirmInput.autocomplete = "off";
+		confirmInput.spellcheck = false;
+
+		const confirmBtn = resetForm.createEl("button", { text: "Reset streak data", cls: "mod-warning habit-tracker-reset-confirm-btn" });
+		confirmBtn.type = "button";
+		confirmBtn.disabled = true;
+		confirmInput.oninput = () => {
+			confirmBtn.disabled = confirmInput.value.trim().toLowerCase() !== "delete";
+		};
+		confirmBtn.onclick = async () => {
+			if (confirmInput.value.trim().toLowerCase() !== "delete") return;
+			const scope = scopeSelect.value;
+			if (scope === "__all__") {
+				this.plugin.data.entries = {};
+				new Notice("Reset check-in history for all habits.");
+			} else {
+				this.plugin.data.entries[scope] = {};
+				const habitName = this.plugin.data.habits.find((h) => h.id === scope)?.name ?? "that habit";
+				new Notice(`Reset check-in history for "${habitName}".`);
+			}
+			await this.plugin.persist();
+			this.plugin.refreshAll();
+			backdrop.remove();
+		};
+
 		const closeBtn = panel.createEl("button", { text: "Done", cls: "mod-cta habit-tracker-settings-close" });
 		closeBtn.type = "button";
 		closeBtn.onclick = () => backdrop.remove();

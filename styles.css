@@ -179,6 +179,86 @@ body.theme-dark {
 	accent-color: var(--interactive-accent);
 }
 
+.habit-tracker-settings-danger-heading {
+	margin-top: var(--ht-space-4);
+	padding-top: var(--ht-space-3);
+	border-top: 1px solid var(--background-modifier-border);
+	color: var(--text-error, var(--text-muted));
+	font-size: 0.75em;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.habit-tracker-settings-danger-btn {
+	display: block;
+	width: 100%;
+	margin-top: var(--ht-space-2);
+	padding: 7px 10px;
+	border: 1px solid var(--background-modifier-error, var(--text-error));
+	border-radius: var(--ht-radius-md);
+	background-color: transparent;
+	color: var(--text-error, var(--text-normal));
+	cursor: pointer;
+	font-size: 0.85em;
+	box-shadow: none;
+}
+
+.habit-tracker-settings-danger-btn:hover {
+	background-color: var(--background-modifier-error, var(--background-modifier-hover));
+	color: var(--text-on-accent);
+}
+
+.habit-tracker-reset-form {
+	display: none;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: var(--ht-space-3);
+	padding: var(--ht-space-3);
+	border-radius: var(--ht-radius-lg);
+	background-color: var(--background-secondary);
+}
+
+.habit-tracker-reset-form-visible {
+	display: flex;
+}
+
+.habit-tracker-settings-label {
+	font-size: 0.75em;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	margin-top: 4px;
+}
+
+.habit-tracker-reset-scope {
+	width: 100%;
+}
+
+.habit-tracker-reset-warning {
+	margin: 2px 0 0;
+	padding: 8px 10px;
+	border-radius: var(--ht-radius-md);
+	background-color: color-mix(in srgb, var(--text-error, red) 12%, var(--background-primary));
+	color: var(--text-error, var(--text-normal));
+	font-size: 0.78em;
+	line-height: 1.4;
+}
+
+.habit-tracker-reset-confirm-input {
+	width: 100%;
+}
+
+.habit-tracker-reset-confirm-btn {
+	margin-top: 4px;
+}
+
+.habit-tracker-reset-confirm-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
 .habit-tracker-walkthrough-btn {
 	font-size: 0.78em;
 	font-weight: 500;
