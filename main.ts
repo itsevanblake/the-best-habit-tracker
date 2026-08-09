@@ -177,13 +177,12 @@ function computeBestStreak(entries: Record<string, EntryValue>): number {
 	return best;
 }
 
-// Cycles a day's state: empty -> full -> minimum version -> empty. Both
-// "full" and "min" count as success for streak purposes (Law 4: showing up
-// is what earns the reward), they just render differently.
+// Toggles a day's state: empty -> full -> empty. A day previously marked
+// "min" (the old three-state minimum-version cycle) still clears back to
+// empty on the next click, same as "full" — it just can't be newly created
+// anymore.
 function nextEntryValue(current: EntryValue | undefined): EntryValue | undefined {
-	if (current === undefined) return true;
-	if (current === true) return "min";
-	return undefined;
+	return current === undefined ? true : undefined;
 }
 
 interface HabitLevers {

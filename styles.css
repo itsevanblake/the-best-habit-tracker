@@ -243,7 +243,7 @@ body.theme-dark {
 
 .habit-tracker-pill-streak .habit-tracker-pill-value {
 	font-size: 1.1em;
-	color: var(--habit-color, var(--interactive-accent));
+	color: #ffffff;
 }
 
 /* Milestone echo — a brief glow on the streak pill, timed to match the
