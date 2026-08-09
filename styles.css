@@ -134,14 +134,31 @@ body.theme-dark {
 	border-color: var(--interactive-accent);
 }
 
+/* Appended to <body>, not .habit-tracker-root, so it centers over the
+   whole viewport regardless of where the tracker sits on the page or how
+   far the note is scrolled. */
+.habit-tracker-settings-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 100;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(0, 0, 0, 0.5);
+	animation: habit-tracker-fade-in 0.12s ease-out;
+}
+
 .habit-tracker-settings-panel {
-	position: absolute;
-	z-index: 3;
-	padding: var(--ht-space-3);
-	border-radius: var(--ht-radius-lg);
+	width: min(340px, calc(100vw - 32px));
+	padding: var(--ht-space-4);
+	border-radius: var(--ht-radius-xl);
 	background-color: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
 	box-shadow: var(--ht-shadow-md);
+}
+
+.habit-tracker-settings-panel h4 {
+	margin: 0 0 var(--ht-space-3);
 }
 
 .habit-tracker-settings-row {
@@ -149,8 +166,12 @@ body.theme-dark {
 	align-items: center;
 	gap: 8px;
 	cursor: pointer;
-	font-size: 0.85em;
-	white-space: nowrap;
+	font-size: 0.9em;
+}
+
+.habit-tracker-settings-close {
+	display: block;
+	margin: var(--ht-space-4) 0 0 auto;
 }
 
 .habit-tracker-settings-row input[type="checkbox"] {

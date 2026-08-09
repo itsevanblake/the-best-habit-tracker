@@ -1128,7 +1128,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			const gearBtn = toggleRow.createEl("button", { text: "⚙️", cls: "habit-tracker-gear-btn" });
 			gearBtn.type = "button";
 			gearBtn.setAttr("aria-label", "Settings");
-			gearBtn.onclick = () => this.toggleSettingsPanel(gearBtn);
+			gearBtn.onclick = () => this.toggleSettingsPanel();
 		}
 
 		if (habits.length === 0 && !this.filterName) {
@@ -1226,16 +1226,21 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}, 50);
 	}
 
-	// A single-checkbox popover anchored under the gear button, rather than
-	// a full settings tab, since there's exactly one preference to expose
-	// here (celebration effects on/off).
-	toggleSettingsPanel(gearBtn: HTMLElement) {
-		const existing = this.containerEl.querySelector(".habit-tracker-settings-panel");
+	// A single-checkbox panel, rather than a full settings tab, since
+	// there's exactly one preference to expose here (celebration effects
+	// on/off). Centered over the whole viewport (via a fixed backdrop
+	// appended to <body>, not anchored under the gear button) so it's
+	// never clipped/off-position regardless of where the tracker sits on
+	// the page or how far the note is scrolled.
+	toggleSettingsPanel() {
+		const existing = document.querySelector(".habit-tracker-settings-backdrop");
 		if (existing) {
 			existing.remove();
 			return;
 		}
-		const panel = this.containerEl.createDiv({ cls: "habit-tracker-settings-panel" });
+		const backdrop = document.body.createDiv({ cls: "habit-tracker-settings-backdrop" });
+		const panel = backdrop.createDiv({ cls: "habit-tracker-settings-panel" });
+		panel.createEl("h4", { text: "Habit Tracker Settings" });
 		const label = panel.createEl("label", { cls: "habit-tracker-settings-row" });
 		const checkbox = label.createEl("input");
 		checkbox.type = "checkbox";
@@ -1245,20 +1250,19 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			this.plugin.settings.celebrationEffectsEnabled = checkbox.checked;
 			await this.plugin.saveSettings();
 		};
+		const closeBtn = panel.createEl("button", { text: "Done", cls: "mod-cta habit-tracker-settings-close" });
+		closeBtn.type = "button";
+		closeBtn.onclick = () => backdrop.remove();
 
-		const closeOnOutsideClick = (e: MouseEvent) => {
-			if (panel.contains(e.target as Node) || gearBtn.contains(e.target as Node)) return;
-			panel.remove();
-			document.removeEventListener("click", closeOnOutsideClick, true);
+		backdrop.onclick = (e) => {
+			if (e.target === backdrop) backdrop.remove();
 		};
-		window.setTimeout(() => document.addEventListener("click", closeOnOutsideClick, true), 0);
-
-		window.setTimeout(() => {
-			const rootRect = this.containerEl.getBoundingClientRect();
-			const btnRect = gearBtn.getBoundingClientRect();
-			panel.style.top = `${btnRect.bottom - rootRect.top + 6}px`;
-			panel.style.right = `${rootRect.right - btnRect.right}px`;
-		}, 0);
+		const closeOnEscape = (e: KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			backdrop.remove();
+			document.removeEventListener("keydown", closeOnEscape);
+		};
+		document.addEventListener("keydown", closeOnEscape);
 	}
 
 	renderHabit(parentEl: HTMLElement, habit: HabitDefinition) {
