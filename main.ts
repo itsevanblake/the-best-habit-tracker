@@ -376,6 +376,33 @@ class HabitFormModal extends Modal {
 			});
 		});
 
+		// A reusable row: label (fixed, not part of any editable control —
+		// can't be typed into or deleted) + auto-growing textarea (native
+		// placeholder clears itself the instant that specific field is
+		// typed into) + "?" help toggle.
+		const renderLeverRow = (key: keyof HabitLevers) => {
+			const setting = new Setting(contentEl).setName(LEVER_LABELS[key]).addTextArea((text) => {
+				if (this.isNew) text.setPlaceholder(EXAMPLE_LEVERS[key]);
+				text.setValue(this.values[key]).onChange((v) => {
+					this.values[key] = v;
+					autoGrow(text.inputEl);
+				});
+				text.inputEl.addClass("habit-tracker-lever-input");
+				text.inputEl.rows = 1;
+				window.setTimeout(() => autoGrow(text.inputEl), 0);
+			});
+			setting.settingEl.addClass("habit-tracker-lever-setting");
+			const info = LEVER_TERM_INFO[key];
+			addHelpToggle(setting, contentEl, info.term, info.definition, EXAMPLE_LEVERS[key]);
+		};
+
+		contentEl.createEl("h4", { text: "Identity & Context" });
+		contentEl.createEl("p", {
+			cls: "setting-item-description",
+			text: "Who this habit is evidence for, the cue's specifics, and what it's actually for.",
+		});
+		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key);
+
 		new Setting(contentEl).setName("Color");
 		const swatchRow = contentEl.createDiv({ cls: "habit-tracker-swatch-row" });
 		const swatches: HTMLElement[] = [];
@@ -416,26 +443,6 @@ class HabitFormModal extends Modal {
 		});
 		addHelpToggle(typeSetting, contentEl, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
 
-		// A reusable row: label (fixed, not part of any editable control —
-		// can't be typed into or deleted) + auto-growing textarea (native
-		// placeholder clears itself the instant that specific field is
-		// typed into) + "?" help toggle.
-		const renderLeverRow = (key: keyof HabitLevers) => {
-			const setting = new Setting(contentEl).setName(LEVER_LABELS[key]).addTextArea((text) => {
-				if (this.isNew) text.setPlaceholder(EXAMPLE_LEVERS[key]);
-				text.setValue(this.values[key]).onChange((v) => {
-					this.values[key] = v;
-					autoGrow(text.inputEl);
-				});
-				text.inputEl.addClass("habit-tracker-lever-input");
-				text.inputEl.rows = 1;
-				window.setTimeout(() => autoGrow(text.inputEl), 0);
-			});
-			setting.settingEl.addClass("habit-tracker-lever-setting");
-			const info = LEVER_TERM_INFO[key];
-			addHelpToggle(setting, contentEl, info.term, info.definition, EXAMPLE_LEVERS[key]);
-		};
-
 		contentEl.createEl("h4", { text: "The Complete Habit Formula" });
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
@@ -461,13 +468,6 @@ class HabitFormModal extends Modal {
 		};
 
 		for (const key of FORMULA_KEYS) renderLeverRow(key);
-
-		contentEl.createEl("h4", { text: "Also part of Atomic Habits" });
-		contentEl.createEl("p", {
-			cls: "setting-item-description",
-			text: "Not part of the formula sentence above, but still core to the book — identity, the cue's specifics, and what this habit is actually for.",
-		});
-		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key);
 
 		if (this.isNew) {
 			// Wrapping the checkbox and text in a single <label> makes the
