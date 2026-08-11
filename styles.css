@@ -290,6 +290,15 @@ body.theme-dark {
 
 .habit-tracker-view-toggle {
 	display: flex;
+	/* Defensive: 4 segments (Week/Month/Year/Year - Days), and the (hover:
+	   none) block below deliberately widens each button's touch target,
+	   which on the narrowest phones (~320px) can push the segmented
+	   control's total width past what's left after the walkthrough button
+	   and gear icon. flex-wrap lets it break into two rows instead of
+	   sliding past the block's edge — .habit-tracker-toggle-row-left
+	   already wraps around it, this just makes the control itself safe to
+	   wrap internally too. */
+	flex-wrap: wrap;
 	background-color: var(--background-secondary);
 	border-radius: var(--ht-radius-lg);
 	padding: 3px;
@@ -368,13 +377,36 @@ body.theme-dark {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	/* min-width:0 is what actually lets this flex item (of
+	   .habit-tracker-title-row) shrink below its own nowrap text width in
+	   the first place — without it the ellipsis rule above never has
+	   anything to clip, since the default flex min-width:auto keeps the
+	   item at its full text width and just pushes the row wider instead of
+	   truncating. Same root cause as the stats-row overflow above. */
+	min-width: 0;
 }
 
+/* flex-shrink:1 + min-width:0 (NOT 0/none) is load-bearing here: this row
+   holds up to 6 pills (streak/best/week/month/votes/year), and as a flex
+   item of .habit-tracker-header it needs to actually be ALLOWED to shrink
+   below its own max-content width before its own `flex-wrap: wrap` can ever
+   have anything to do. A flex item's default min-width is `auto`, which
+   resolves to its content's min-content size — for a nowrap-free row of
+   pills that's still effectively their combined width unless the item can
+   shrink past it, so min-width:0 is what actually unlocks wrapping. This
+   was previously flex-shrink:0 (to protect the row from being squozen by
+   .habit-tracker-actions), which was the actual bug: it pinned the row at
+   full max-content width forever, so it silently overflowed the card's
+   right edge on narrow/mobile viewports instead of ever wrapping onto a
+   second line — confirmed still reproducing after the first flex-wrap fix.
+   .habit-tracker-actions keeps flex-shrink:0 so it's still never the thing
+   that gets squeezed; this row absorbs the squeeze and wraps instead. */
 .habit-tracker-stats-row {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
-	flex-shrink: 0;
+	flex-shrink: 1;
+	min-width: 0;
 }
 
 /* Edit/delete: deliberately its own flex item, sibling to
@@ -460,6 +492,9 @@ body.theme-dark {
 	border-radius: var(--ht-radius-sm);
 	color: var(--text-on-accent);
 	margin-left: 2px;
+	/* Same title-row squeeze as .habit-tracker-name above should always land
+	   on the name (which truncates), never on this short fixed-text badge. */
+	flex-shrink: 0;
 }
 
 .habit-tracker-type-badge-break {
@@ -486,6 +521,13 @@ body.theme-dark {
 	color: var(--text-muted);
 	font-size: 0.78em;
 	font-weight: 500;
+	/* An inline-flex block-level child of .habit-tracker-habit (which is
+	   overflow:hidden, not a flex container) sizes to its own content and
+	   won't shrink on its own — max-width:100% is a cheap guarantee it
+	   never sits wider than the card even if a future edit makes its text
+	   longer than today's short "N days to next milestone" copy. */
+	max-width: 100%;
+	box-sizing: border-box;
 }
 
 .habit-tracker-milestone-bubble-achieved {
@@ -1239,6 +1281,39 @@ body.theme-dark {
 	outline-offset: 2px;
 }
 
+/* ---- Settings tab: multi-control list rows ---- */
+/* Milestones and Last Call Alarms both render one `new Setting(...)` row
+   per entry with 2-3 inline controls (value/time text input, an optional
+   enabled toggle, a delete button) plus an "add new" row with a name field,
+   a time field, and an Add button — three+ controls competing for
+   .setting-item-control's width on the same line. Obsidian's own CSS
+   flips .setting-item from row to column at narrow widths (label above
+   field, same mechanism noted on .habit-tracker-lever-setting above), but
+   .setting-item-control itself doesn't reliably wrap its own inline
+   controls once stacked under a label — so on a narrow phone the toggle
+   and 🗑 button can still run past the pane's right edge. Force wrap here,
+   same is-mobile-plus-media-query redundancy as the rest of this file for
+   the same viewport-meta-unreliability reason. */
+.habit-tracker-settings-milestones-list .setting-item-control,
+.habit-tracker-settings-lastcall-list .setting-item-control {
+	flex-wrap: wrap;
+	justify-content: flex-start;
+}
+
+@media (max-width: 480px) {
+	.habit-tracker-settings-milestones-list .setting-item-control,
+	.habit-tracker-settings-lastcall-list .setting-item-control {
+		flex-wrap: wrap;
+		row-gap: 6px;
+	}
+}
+
+body.is-mobile .habit-tracker-settings-milestones-list .setting-item-control,
+body.is-mobile .habit-tracker-settings-lastcall-list .setting-item-control {
+	flex-wrap: wrap !important;
+	row-gap: 6px;
+}
+
 /* ---- Touch devices ---- */
 /* (hover: none) targets touch input specifically, regardless of screen
    size — a touch device never fires :hover, so anything that only reveals
@@ -1319,6 +1394,8 @@ body.theme-dark {
 	.habit-tracker-stats-row {
 		gap: 4px;
 		flex-wrap: wrap;
+		flex-shrink: 1;
+		min-width: 0;
 	}
 
 	.habit-tracker-pill {
@@ -1401,8 +1478,16 @@ body.is-mobile .habit-tracker-lever-setting .setting-item-info {
    one guaranteed to actually apply on-device. !important isn't needed
    here (no competing Obsidian core rule to out-rank), just redundancy
    against the same viewport-meta quirk. */
+/* !important here: flex-shrink/min-width are the actual mechanism that lets
+   the pill row wrap instead of overflowing (see the long comment on
+   .habit-tracker-stats-row above) — flex-wrap alone was never the missing
+   piece, and this redundant is-mobile path needs to win over the plain
+   rule above with the same certainty the flex-wrap redundancy already
+   had. */
 body.is-mobile .habit-tracker-stats-row {
-	flex-wrap: wrap;
+	flex-wrap: wrap !important;
+	flex-shrink: 1 !important;
+	min-width: 0 !important;
 }
 
 body.is-mobile .habit-tracker-actions {
@@ -1601,6 +1686,12 @@ body.is-mobile .habit-tracker-actions {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	/* Same missing-min-width:0 issue as .habit-tracker-name above — without
+	   it this flex item (of .habit-tracker-task-header, alongside a
+	   fixed-size checkbox and a flex-shrink:0 date) never actually shrinks
+	   below its full nowrap text width, so a long task name pushes the
+	   whole row past the card edge instead of truncating. */
+	min-width: 0;
 }
 
 .habit-tracker-task-row-done .habit-tracker-task-name {
