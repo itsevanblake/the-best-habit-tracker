@@ -942,24 +942,25 @@ body.theme-dark {
    in its own track with justify-items — so cells stay comfortably sized
    instead of stretching into giant squares on a wide card, without
    shrinking the grid itself into a narrow centered block. */
+/* Fixed-size (not 1fr) columns, same idea as Year view's tightly-packed
+   grid — 1fr columns span the card's full width, and with only 7 of them
+   each track is huge, so centering a small cell inside that huge track
+   (the previous approach) reads as cells scattered far apart instead of
+   sitting together. Sizing the tracks themselves keeps cells adjacent
+   (gap is the only space between them), then justify-content centers the
+   resulting compact block within the card. */
 .habit-tracker-month-grid {
 	display: grid;
-	grid-template-columns: repeat(7, minmax(0, 1fr));
-	justify-items: center;
-	gap: 6px;
+	grid-template-columns: repeat(7, minmax(0, 46px));
+	justify-content: center;
+	gap: 5px;
 }
 
-.habit-tracker-month-grid .habit-tracker-week-cell {
-	max-width: 64px;
-	max-height: 64px;
-	justify-self: center;
-}
-
-/* Month cells are half the size of Week's 76px cells, so Week's date-label
-   font-size (1.35em, sized for the bigger box) reads oversized/cramped
-   here — scale it down to match. */
+/* Month cells are noticeably smaller than Week's 76px cells, so Week's
+   date-label font-size (1.35em, sized for the bigger box) reads
+   oversized/cramped here — scale it down to match. */
 .habit-tracker-month-grid .habit-tracker-week-date-label {
-	font-size: 1.05em;
+	font-size: 0.95em;
 }
 
 /* ---- Add habit card ---- */
