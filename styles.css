@@ -1187,6 +1187,47 @@ body.theme-dark {
 	font-weight: 600;
 }
 
+.habit-tracker-review-formula-btn {
+	margin: 4px 0 12px;
+	cursor: pointer;
+}
+
+.habit-tracker-review-results {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-bottom: 14px;
+}
+
+.habit-tracker-review-card {
+	padding: 10px 12px;
+	border-radius: var(--ht-radius-lg);
+	background-color: var(--background-secondary);
+	border-left: 3px solid var(--interactive-accent);
+}
+
+.habit-tracker-review-critique {
+	margin: 4px 0;
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+.habit-tracker-review-rewrite {
+	margin: 4px 0;
+	font-style: italic;
+}
+
+.habit-tracker-review-actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 6px;
+}
+
+.habit-tracker-review-actions button {
+	cursor: pointer;
+	font-size: 0.85em;
+}
+
 .habit-tracker-fourlaws-row p {
 	margin: 4px 0 0;
 	color: var(--text-muted);

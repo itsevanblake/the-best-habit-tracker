@@ -1,4 +1,4 @@
-import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice, ItemView, WorkspaceLeaf } from "obsidian";
+import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice, ItemView, WorkspaceLeaf, requestUrl } from "obsidian";
 import { createClient, SupabaseClient, Session, RealtimeChannel } from "@supabase/supabase-js";
 
 type HabitType = "build" | "break";
@@ -81,6 +81,13 @@ interface PluginSettings {
 	// straight out of data.json via jq, so the two halves (in-app +
 	// closed-Obsidian) share one source of truth instead of drifting.
 	lastCallAlarms: LastCallAlarm[];
+	// AI Assistance — powers the "Review Formula" button in the Add/Edit
+	// Habit modal, which sends the Complete Habit Formula fields to the
+	// Anthropic Messages API and gets back a critique + rewrite per field.
+	// Local-only (not synced via Supabase): an API key is a per-device
+	// credential, not habit data.
+	anthropicApiKey: string;
+	anthropicModel: string;
 }
 
 const DEFAULT_MILESTONES = [7, 30, 60, 100, 150, 200, 250, 300, 365];
@@ -97,6 +104,8 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	celebrationEffectsEnabled: true,
 	milestones: DEFAULT_MILESTONES,
 	lastCallAlarms: [],
+	anthropicApiKey: "",
+	anthropicModel: "claude-haiku-4-5-20251001",
 };
 
 // A cohesive, vibrant set (consistent saturation/lightness rather than a
@@ -440,7 +449,10 @@ interface HabitFormValues extends HabitLevers {
 // The Complete Habit Formula fields, matching the Four Laws 1:1.
 const FORMULA_KEYS: (keyof HabitLevers)[] = ["stackedAfter", "craving", "minimumVersion", "reward"];
 // Also part of Atomic Habits, but not part of the 4-law formula sentence.
-const OTHER_LEVER_KEYS: (keyof HabitLevers)[] = ["identity", "linkedGoal"];
+// linkedGoal is deliberately excluded here — it gets its own dropdown
+// (picked from Life Compass Goals) rather than the generic textarea
+// treatment every other lever field gets, see renderGoalPicker below.
+const OTHER_LEVER_KEYS: (keyof HabitLevers)[] = ["identity"];
 
 // Shown as each field's placeholder hint for a brand-new habit (nothing
 // set yet). Native placeholder text is inherently the right tool here: it
@@ -552,6 +564,88 @@ const FOUR_LAWS: { law: string; stage: string; fields: string; text: string }[] 
 	},
 ];
 
+// ---- AI Assistance — "Review Formula" button in the Add/Edit Habit modal.
+// Sends the four Complete Habit Formula fields to the Anthropic Messages
+// API in one call and gets back a critique + suggested rewrite per field,
+// judged against Clear's own Four Laws (same framing as FOUR_LAWS above). ----
+
+type FormulaFieldKey = "stackedAfter" | "craving" | "minimumVersion" | "reward";
+
+interface FormulaReviewResult {
+	critique: string;
+	rewrite: string;
+}
+
+type FormulaReview = Partial<Record<FormulaFieldKey, FormulaReviewResult>>;
+
+const FORMULA_REVIEW_SYSTEM_PROMPT = `You are a habit-design coach grounded in James Clear's Atomic Habits, specifically the Four Laws of Behavior Change. The user is filling in "The Complete Habit Formula" for a habit: "After I [Trigger], I will [Routine]. [Craving]. Once done, [Reward]."
+
+For each of the four fields they've written, judge it against its Law:
+- Trigger (Law 1, Make It Obvious): is the cue a specific, already-automatic moment — not vague like "in the morning"?
+- Craving (Law 2, Make It Attractive): is there a real temptation-bundling pull, something they already want, tied to the habit?
+- Routine (Law 3, Make It Easy): is it scaled down to under two minutes — the smallest possible version, not the aspirational full version?
+- Reward (Law 4, Make It Satisfying): is the payoff immediate and tied to completion — not a delayed, someday-in-the-future outcome?
+
+Only include a field in your response if the user actually wrote something for it (skip empty fields). For each included field, give a one-sentence critique of its concrete weakness, and one rewritten version that's stronger — concise, specific, in the user's own voice, not generic. Respond with ONLY minified JSON, no markdown fencing, no prose outside the JSON, in this exact shape:
+{"stackedAfter":{"critique":"...","rewrite":"..."},"craving":{"critique":"...","rewrite":"..."},"minimumVersion":{"critique":"...","rewrite":"..."},"reward":{"critique":"...","rewrite":"..."}}
+Omit keys for fields that were empty.`;
+
+async function reviewHabitFormula(plugin: HabitTrackerPlugin, fields: Record<FormulaFieldKey, string>): Promise<FormulaReview> {
+	const apiKey = plugin.settings.anthropicApiKey;
+	if (!apiKey) throw new Error("No Anthropic API key set — add one in Habit Tracker settings.");
+
+	const formulaKeys = FORMULA_KEYS as FormulaFieldKey[];
+	const userContent = formulaKeys
+		.filter((k) => fields[k]?.trim())
+		.map((k) => `${LEVER_LABELS[k]}: ${fields[k].trim()}`)
+		.join("\n");
+	if (!userContent) throw new Error("Fill in at least one formula field first.");
+
+	const response = await requestUrl({
+		url: "https://api.anthropic.com/v1/messages",
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			"x-api-key": apiKey,
+			"anthropic-version": "2023-06-01",
+		},
+		body: JSON.stringify({
+			model: plugin.settings.anthropicModel || DEFAULT_SETTINGS.anthropicModel,
+			max_tokens: 1024,
+			system: FORMULA_REVIEW_SYSTEM_PROMPT,
+			messages: [{ role: "user", content: userContent }],
+		}),
+		throw: false,
+	});
+
+	if (response.status < 200 || response.status >= 300) {
+		const detail = response.json?.error?.message ?? response.text ?? `HTTP ${response.status}`;
+		throw new Error(`Anthropic API error: ${detail}`);
+	}
+
+	const text: string = response.json?.content?.[0]?.text ?? "";
+	try {
+		return JSON.parse(text) as FormulaReview;
+	} catch {
+		throw new Error("Couldn't parse the AI's response — try again.");
+	}
+}
+
+// ---- Cross-plugin interop with life-compass (unrelated data store, read
+// directly — mirrors life-compass's own getHabitTrackerHabits(), see that
+// plugin's CLAUDE.md section). ----
+
+interface LinkedOutcomeLite {
+	id: string;
+	name: string;
+	archived?: boolean;
+}
+
+function getLifeCompassOutcomes(app: App): LinkedOutcomeLite[] | null {
+	const anyApp = app as unknown as { plugins: { plugins: Record<string, { data?: { outcomes?: LinkedOutcomeLite[] } }> } };
+	return anyApp.plugins?.plugins?.["life-compass"]?.data?.outcomes ?? null;
+}
+
 // Small "?" toggle next to a Setting's name that shows/hides a definition
 // + example box directly beneath it.
 function addHelpToggle(setting: Setting, container: HTMLElement, term: string, definition: string, example: string) {
@@ -591,6 +685,8 @@ interface WalkthroughRefs {
 	kindSetting: Setting;
 	kindSelectEl: HTMLSelectElement;
 	leverElements: Partial<Record<keyof HabitLevers, { setting: Setting; textareaEl: HTMLTextAreaElement }>>;
+	goalSetting: Setting;
+	goalSelectEl: HTMLSelectElement;
 	colorSetting: Setting;
 	swatchRow: HTMLElement;
 	typeSetting: Setting;
@@ -752,6 +848,46 @@ class HabitFormModal extends Modal {
 		});
 		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key, identityWrap);
 
+		// Goal — picked from Life Compass's Goals (still called Outcome
+		// internally in that plugin's own data model; only the UI label
+		// changed) rather than typed free-text, so the link is reliable
+		// instead of depending on the two plugins agreeing on spelling.
+		const lifeCompassOutcomes = getLifeCompassOutcomes(this.plugin.app);
+		let goalSelectEl: HTMLSelectElement;
+		const goalSetting = new Setting(identityWrap).setName(LEVER_LABELS.linkedGoal).addDropdown((dd) => {
+			goalSelectEl = dd.selectEl;
+			dd.addOption("", "— None —");
+			const currentValue = this.values.linkedGoal;
+			let currentMatchesGoal = false;
+			for (const o of lifeCompassOutcomes ?? []) {
+				if (o.archived) continue;
+				dd.addOption(o.name, o.name);
+				if (o.name === currentValue) currentMatchesGoal = true;
+			}
+			// Preserve a pre-existing value that doesn't match any current
+			// Goal by name (legacy free-text data, or Life Compass isn't
+			// installed) rather than silently discarding it.
+			if (currentValue && !currentMatchesGoal) {
+				dd.addOption(currentValue, `${currentValue} (custom)`);
+			}
+			dd.setValue(currentValue);
+			dd.onChange((v) => {
+				this.values.linkedGoal = v;
+			});
+		});
+		addHelpToggle(goalSetting, identityWrap, LEVER_TERM_INFO.linkedGoal.term, LEVER_TERM_INFO.linkedGoal.definition, EXAMPLE_LEVERS.linkedGoal);
+		if (!lifeCompassOutcomes) {
+			identityWrap.createEl("p", {
+				cls: "setting-item-description",
+				text: "Life Compass isn't installed/enabled — install it to pick a Goal here, or leave this on its existing custom value.",
+			});
+		} else if (lifeCompassOutcomes.filter((o) => !o.archived).length === 0) {
+			identityWrap.createEl("p", {
+				cls: "setting-item-description",
+				text: "No Goals yet in Life Compass — add one there, then come back to link it.",
+			});
+		}
+
 		const colorSetting = new Setting(contentEl).setName("Color");
 		const swatchRow = contentEl.createDiv({ cls: "habit-tracker-swatch-row" });
 		const swatches: HTMLElement[] = [];
@@ -856,6 +992,65 @@ class HabitFormModal extends Modal {
 
 		for (const key of FORMULA_KEYS) renderLeverRow(key, formulaWrap);
 
+		if (this.plugin.settings.anthropicApiKey) {
+			const reviewBtn = formulaWrap.createEl("button", {
+				text: "✨ Review Formula",
+				cls: "habit-tracker-review-formula-btn",
+			});
+			reviewBtn.type = "button";
+			const reviewResultsEl = formulaWrap.createDiv({ cls: "habit-tracker-review-results" });
+			reviewBtn.onclick = async () => {
+				reviewBtn.disabled = true;
+				const originalLabel = reviewBtn.textContent;
+				reviewBtn.textContent = "Reviewing…";
+				reviewResultsEl.empty();
+				try {
+					const fields = {
+						stackedAfter: this.values.stackedAfter,
+						craving: this.values.craving,
+						minimumVersion: this.values.minimumVersion,
+						reward: this.values.reward,
+					};
+					const review = await reviewHabitFormula(this.plugin, fields);
+					const reviewedKeys = FORMULA_KEYS.filter((k) => review[k]);
+					if (reviewedKeys.length === 0) {
+						reviewResultsEl.createEl("p", {
+							cls: "setting-item-description",
+							text: "Fill in at least one formula field, then try again.",
+						});
+					}
+					for (const key of reviewedKeys) {
+						const result = review[key]!;
+						const card = reviewResultsEl.createDiv({ cls: "habit-tracker-review-card" });
+						card.createEl("strong", { text: LEVER_LABELS[key] });
+						card.createEl("p", { cls: "habit-tracker-review-critique", text: result.critique });
+						card.createEl("p", { cls: "habit-tracker-review-rewrite", text: `"${result.rewrite}"` });
+						const actions = card.createDiv({ cls: "habit-tracker-review-actions" });
+						const useBtn = actions.createEl("button", { text: "Use this" });
+						useBtn.type = "button";
+						useBtn.onclick = () => {
+							this.values[key] = result.rewrite;
+							const el = leverElements[key]!.textareaEl;
+							el.value = result.rewrite;
+							autoGrow(el);
+							card.remove();
+						};
+						const dismissBtn = actions.createEl("button", { text: "Dismiss" });
+						dismissBtn.type = "button";
+						dismissBtn.onclick = () => card.remove();
+					}
+				} catch (e) {
+					reviewResultsEl.createEl("p", {
+						cls: "setting-item-description",
+						text: e instanceof Error ? e.message : "Something went wrong reviewing your formula.",
+					});
+				} finally {
+					reviewBtn.disabled = false;
+					reviewBtn.textContent = originalLabel;
+				}
+			};
+		}
+
 		// Per-habit check-in alarm — habit-only (hidden for a task, same as
 		// Type above), since the firing condition is "not checked in today,"
 		// which isn't meaningful for a one-off scheduled item.
@@ -926,6 +1121,8 @@ class HabitFormModal extends Modal {
 			kindSetting,
 			kindSelectEl,
 			leverElements,
+			goalSetting,
+			goalSelectEl,
 			colorSetting,
 			swatchRow,
 			typeSetting,
@@ -974,10 +1171,10 @@ class HabitFormModal extends Modal {
 				title: LEVER_TERM_INFO.linkedGoal.term,
 				body: () =>
 					isTask()
-						? `You don't rise to the level of your goals — you fall to the level of your systems. This task is one rep of that system; what goal is it actually serving for you? Example: "${EXAMPLE_LEVERS.linkedGoal}"`
-						: `You don't rise to the level of your goals — you fall to the level of your systems. This habit is your system; what goal is it actually serving for you? Example: "${EXAMPLE_LEVERS.linkedGoal}"`,
-				target: lever("linkedGoal").setting.settingEl,
-				focusEl: lever("linkedGoal").textareaEl,
+						? "You don't rise to the level of your goals — you fall to the level of your systems. This task is one rep of that system; pick which Goal it's actually serving."
+						: "You don't rise to the level of your goals — you fall to the level of your systems. This habit is your system; pick which Goal it's actually serving.",
+				target: refs.goalSetting.settingEl,
+				focusEl: refs.goalSelectEl,
 			},
 			{
 				title: "Pick a color",
@@ -1205,6 +1402,11 @@ class HabitFormModal extends Modal {
 			"change",
 			steps.findIndex((s) => s.focusEl === refs.kindSelectEl)
 		);
+		bindAdvance(
+			refs.goalSelectEl,
+			"change",
+			steps.findIndex((s) => s.focusEl === refs.goalSelectEl)
+		);
 		if (refs.commitCheckboxEl) {
 			const commitEl = refs.commitCheckboxEl;
 			bindAdvance(
@@ -1251,6 +1453,10 @@ class HabitFormModal extends Modal {
 					new Notice(`Fill out "${LEVER_LABELS[key]}" — ${LEVER_HELP_REASON[key]}, which will help you with ${verb} ${subject}.`);
 					return;
 				}
+			}
+			if (!this.values.linkedGoal.trim()) {
+				new Notice(`Pick a "${LEVER_LABELS.linkedGoal}" — ${LEVER_HELP_REASON.linkedGoal}, which will help you with ${verb} ${subject}.`);
+				return;
 			}
 			if (!this.commitChecked) {
 				new Notice(`Check "I commit to ${verb} ${subject}" to continue.`);
@@ -1397,6 +1603,39 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 			cls: "setting-item-description",
 		});
 		this.renderLastCallAlarmsSection(containerEl);
+
+		containerEl.createEl("h2", { text: "AI Assistance" });
+		containerEl.createEl("p", {
+			text: 'Powers the "✨ Review Formula" button in the Add/Edit Habit form, which critiques and suggests rewrites for your Complete Habit Formula fields (Trigger/Craving/Routine/Reward). Uses the Anthropic API — your key is stored locally on this device only, never synced.',
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("Anthropic API key")
+			.setDesc("From console.anthropic.com. Leave blank to hide the Review Formula button.")
+			.addText((text) => {
+				text.inputEl.type = "password";
+				text
+					.setPlaceholder("sk-ant-...")
+					.setValue(this.plugin.settings.anthropicApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.anthropicApiKey = value.trim();
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Model")
+			.setDesc("Anthropic model id to use for the review.")
+			.addText((text) =>
+				text
+					.setPlaceholder("claude-haiku-4-5-20251001")
+					.setValue(this.plugin.settings.anthropicModel)
+					.onChange(async (value) => {
+						this.plugin.settings.anthropicModel = value.trim() || DEFAULT_SETTINGS.anthropicModel;
+						await this.plugin.saveSettings();
+					})
+			);
 
 		containerEl.createEl("h3", { text: "Sign in" });
 		this.statusEl = containerEl.createEl("p", { cls: "setting-item-description" });
