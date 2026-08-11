@@ -2261,11 +2261,6 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		container.createDiv({ text: first.toLocaleString("default", { month: "long", year: "numeric" }), cls: "habit-tracker-month-title" });
 
-		const headerRow = container.createDiv({ cls: "habit-tracker-month-weekday-header" });
-		["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((wd) => {
-			headerRow.createSpan({ text: wd });
-		});
-
 		const gridEl = container.createDiv({ cls: "habit-tracker-month-grid" });
 		// Row-major order matches the grid's default (row) auto-flow.
 		for (let w = 0; w < weeks; w++) {

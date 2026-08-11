@@ -751,7 +751,15 @@ body.theme-dark {
 	animation-fill-mode: forwards;
 }
 
-.habit-tracker-cell-future {
+/* Compound selectors (not just .habit-tracker-cell-future alone) for the
+   same reason as .habit-tracker-cell-missed below — .habit-tracker-cell and
+   .habit-tracker-yeardays-cell both set their own background-color, and
+   this rule was declared before .habit-tracker-yeardays-cell in the file,
+   so plain .habit-tracker-cell-future was silently losing the cascade and
+   future days in Year-Days view kept the default filled-grey background
+   instead of ever turning transparent. */
+.habit-tracker-cell.habit-tracker-cell-future,
+.habit-tracker-yeardays-cell.habit-tracker-cell-future {
 	background-color: transparent;
 	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
 	cursor: pointer;
@@ -927,34 +935,24 @@ body.theme-dark {
 	color: var(--text-muted);
 }
 
-.habit-tracker-month-weekday-header {
-	display: grid;
-	grid-template-columns: repeat(7, 1fr);
-	font-size: 0.72em;
-	color: var(--text-muted);
-	text-transform: uppercase;
-	letter-spacing: 0.03em;
-	text-align: center;
-	margin-bottom: 6px;
-}
-
 /* Unlike .habit-tracker-week-grid (a flex row where flex:1 + a 76px
-   max-width naturally keeps 7 cells small), this is a CSS grid — each of
-   the 7 `1fr` columns claims a full 1/7 share of the card's width with no
-   natural cap the way Year's 53 week-columns get one for free. Capping
-   the track width itself (not just the cell inside it) via minmax(...,
-   48px) is what actually shrinks the grid; centering it with
-   justify-content keeps the now-narrower grid from sitting flush left
-   with a wide gap of empty card to its right. */
+   max-width naturally keeps 7 cells small), this is a CSS grid. The 7
+   `1fr` columns span the full width of the card (like a normal calendar),
+   and each individual cell is capped via max-width/max-height + centered
+   in its own track with justify-items — so cells stay comfortably sized
+   instead of stretching into giant squares on a wide card, without
+   shrinking the grid itself into a narrow centered block. */
 .habit-tracker-month-grid {
 	display: grid;
-	grid-template-columns: repeat(7, minmax(0, 48px));
-	justify-content: center;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	justify-items: center;
 	gap: 6px;
 }
 
 .habit-tracker-month-grid .habit-tracker-week-cell {
-	max-width: 48px;
+	max-width: 64px;
+	max-height: 64px;
+	justify-self: center;
 }
 
 /* Month cells are half the size of Week's 76px cells, so Week's date-label
