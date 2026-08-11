@@ -2192,6 +2192,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const totalDays = Math.round((dec31.getTime() - start.getTime()) / 86400000) + 1;
 		const weeks = Math.ceil(totalDays / 7);
 
+		container.createDiv({ text: `${year}`, cls: "habit-tracker-month-title" });
+
 		const monthRow = container.createDiv({ cls: "habit-tracker-months" });
 		const gridEl = container.createDiv({ cls: "habit-tracker-grid" });
 		gridEl.style.gridTemplateColumns = `repeat(${weeks}, 1fr)`;
