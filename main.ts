@@ -829,6 +829,33 @@ class HabitFormModal extends Modal {
 		});
 		addHelpToggle(typeSetting, typeWrap, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
 
+		const formulaWrap = contentEl.createDiv();
+		formulaWrap.createEl("h4", { text: "The Complete Habit Formula" });
+		formulaWrap.createEl("p", {
+			cls: "setting-item-description",
+			text: 'Clear\'s own structure, one field per Law: "After I [Trigger], I will [Routine]. [Craving]. Once done, [Reward]."',
+		});
+
+		// Toggleable panel mapping each field to its specific Law.
+		const fourLawsToggle = formulaWrap.createDiv({
+			cls: "habit-tracker-fourlaws-toggle",
+			text: "📖 How this maps to the 4 Laws of Behavior Change",
+		});
+		const fourLawsBox = formulaWrap.createDiv({ cls: "habit-tracker-fourlaws-box" });
+		for (const item of FOUR_LAWS) {
+			const row = fourLawsBox.createDiv({ cls: "habit-tracker-fourlaws-row" });
+			const heading = row.createDiv({ cls: "habit-tracker-fourlaws-heading" });
+			heading.createSpan({ text: item.law, cls: "habit-tracker-fourlaws-law" });
+			heading.createSpan({ text: `(${item.stage})`, cls: "habit-tracker-fourlaws-stage" });
+			heading.createSpan({ text: `→ ${item.fields}`, cls: "habit-tracker-fourlaws-fields" });
+			row.createEl("p", { text: item.text });
+		}
+		fourLawsToggle.onclick = () => {
+			fourLawsBox.toggleClass("habit-tracker-fourlaws-box-visible", !fourLawsBox.hasClass("habit-tracker-fourlaws-box-visible"));
+		};
+
+		for (const key of FORMULA_KEYS) renderLeverRow(key, formulaWrap);
+
 		// Per-habit check-in alarm — habit-only (hidden for a task, same as
 		// Type above), since the firing condition is "not checked in today,"
 		// which isn't meaningful for a one-off scheduled item.
@@ -867,33 +894,6 @@ class HabitFormModal extends Modal {
 					this.values.alarmRepeatMinutes = n;
 				})
 			);
-
-		const formulaWrap = contentEl.createDiv();
-		formulaWrap.createEl("h4", { text: "The Complete Habit Formula" });
-		formulaWrap.createEl("p", {
-			cls: "setting-item-description",
-			text: 'Clear\'s own structure, one field per Law: "After I [Trigger], I will [Routine]. [Craving]. Once done, [Reward]."',
-		});
-
-		// Toggleable panel mapping each field to its specific Law.
-		const fourLawsToggle = formulaWrap.createDiv({
-			cls: "habit-tracker-fourlaws-toggle",
-			text: "📖 How this maps to the 4 Laws of Behavior Change",
-		});
-		const fourLawsBox = formulaWrap.createDiv({ cls: "habit-tracker-fourlaws-box" });
-		for (const item of FOUR_LAWS) {
-			const row = fourLawsBox.createDiv({ cls: "habit-tracker-fourlaws-row" });
-			const heading = row.createDiv({ cls: "habit-tracker-fourlaws-heading" });
-			heading.createSpan({ text: item.law, cls: "habit-tracker-fourlaws-law" });
-			heading.createSpan({ text: `(${item.stage})`, cls: "habit-tracker-fourlaws-stage" });
-			heading.createSpan({ text: `→ ${item.fields}`, cls: "habit-tracker-fourlaws-fields" });
-			row.createEl("p", { text: item.text });
-		}
-		fourLawsToggle.onclick = () => {
-			fourLawsBox.toggleClass("habit-tracker-fourlaws-box-visible", !fourLawsBox.hasClass("habit-tracker-fourlaws-box-visible"));
-		};
-
-		for (const key of FORMULA_KEYS) renderLeverRow(key, formulaWrap);
 
 		let commitCheckboxEl: HTMLInputElement | undefined;
 		if (this.isNew) {
