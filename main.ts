@@ -2006,6 +2006,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	// Same idea, for Week view: an integer offset in weeks from the real
 	// current week (0 = this week, +1 = next, -1 = previous, ...).
 	selectedWeekOffset: number = 0;
+	// Same idea, for Year and Year-Days view (they share one offset since
+	// both show a single calendar year): an integer offset in years from
+	// the real current year (0 = this year, +1 = next, -1 = previous, ...).
+	selectedYearOffset: number = 0;
 	// Remembers each habit's year-view horizontal scroll position across
 	// re-renders (every click triggers a full rebuild via refreshAll,
 	// which would otherwise reset scroll back to January every time).
@@ -2151,6 +2155,38 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				todayBtn.setAttr("aria-label", "Back to current week");
 				todayBtn.onclick = () => {
 					this.selectedWeekOffset = 0;
+					this.render();
+				};
+			}
+		}
+
+		if (this.currentView === "year" || this.currentView === "yeardays") {
+			const yearNav = leftGroup.createDiv({ cls: "habit-tracker-view-nav" });
+			const prevBtn = yearNav.createEl("button", { text: "◀", cls: "habit-tracker-view-nav-btn" });
+			prevBtn.type = "button";
+			prevBtn.setAttr("aria-label", "Previous year");
+			prevBtn.onclick = () => {
+				this.selectedYearOffset -= 1;
+				this.render();
+			};
+			const navYear = new Date().getFullYear() + this.selectedYearOffset;
+			yearNav.createSpan({
+				text: `${navYear}`,
+				cls: "habit-tracker-view-nav-label",
+			});
+			const nextBtn = yearNav.createEl("button", { text: "▶", cls: "habit-tracker-view-nav-btn" });
+			nextBtn.type = "button";
+			nextBtn.setAttr("aria-label", "Next year");
+			nextBtn.onclick = () => {
+				this.selectedYearOffset += 1;
+				this.render();
+			};
+			if (this.selectedYearOffset !== 0) {
+				const todayBtn = yearNav.createEl("button", { text: "Today", cls: "habit-tracker-view-today-btn" });
+				todayBtn.type = "button";
+				todayBtn.setAttr("aria-label", "Back to current year");
+				todayBtn.onclick = () => {
+					this.selectedYearOffset = 0;
 					this.render();
 				};
 			}
@@ -2641,14 +2677,14 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		} else if (view === "month") {
 			this.renderMonthGrid(grid, habit, entries, this.selectedMonthOffset);
 		} else if (view === "yeardays") {
-			this.renderYearDaysGrid(grid, habit, entries);
+			this.renderYearDaysGrid(grid, habit, entries, this.selectedYearOffset);
 		} else {
-			this.renderYearGrid(grid, habit, entries);
+			this.renderYearGrid(grid, habit, entries, this.selectedYearOffset);
 		}
 	}
 
-	renderYearGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
-		const year = new Date().getFullYear();
+	renderYearGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>, yearOffset: number = 0) {
+		const year = new Date().getFullYear() + yearOffset;
 		const jan1 = new Date(year, 0, 1);
 		const dec31 = new Date(year, 11, 31);
 		// Start columns at Jan 1 itself (not the nearest Sunday) so every
@@ -2749,8 +2785,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 	}
 
-	renderYearDaysGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
-		const year = new Date().getFullYear();
+	renderYearDaysGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>, yearOffset: number = 0) {
+		const year = new Date().getFullYear() + yearOffset;
 		const jan1 = new Date(year, 0, 1);
 		const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 		const totalDays = isLeap ? 366 : 365;
