@@ -935,23 +935,26 @@ body.theme-dark {
 	color: var(--text-muted);
 }
 
-/* 1fr columns so the grid still spans the card's full width edge-to-edge,
-   like Year view's row does. Each square is capped smaller than its full
-   track width and centered within that track (justify-items), so the
-   grid keeps filling the card but the boxes themselves read smaller —
-   evenly-spaced gaps on both sides of each cell instead of the
-   uncapped/full-track-width squares from before. */
+/* Fixed-size columns — the exact same mechanism .habit-tracker-grid (Year
+   view) already uses: a real pixel track size + a small gap, no 1fr, no
+   justify-content/justify-items centering trick. Every previous attempt
+   that capped a cell's size *inside* a wider 1fr track (however it was
+   centered) left dead space around it — capping the cell size does
+   nothing to shrink the track it sits in. Sizing the track itself is the
+   only way to get cells sitting flush against each other with nothing
+   but the gap between them, starting flush left under the month title
+   (matching where day 1 renders) instead of floating as a centered
+   island. */
 .habit-tracker-month-grid {
 	display: grid;
-	grid-template-columns: repeat(7, minmax(0, 1fr));
-	justify-items: center;
+	grid-template-columns: repeat(7, 72px);
 	gap: 6px;
 }
 
 .habit-tracker-month-grid .habit-tracker-week-cell {
 	aspect-ratio: 1 / 1;
 	width: 100%;
-	max-width: 90px;
+	max-width: none;
 }
 
 /* ---- Add habit card ---- */
@@ -1438,8 +1441,21 @@ body.is-mobile .habit-tracker-settings-lastcall-list .setting-item-control {
 		font-size: 1.15em;
 	}
 
+	/* The 72px fixed columns above (7 * 72px + gaps ≈ 528px) would overflow
+	   a phone-width card, which has no horizontal-scroll wrapper on Month
+	   view (unlike Year's .habit-tracker-grid-wrap). At this width the
+	   card itself is narrow enough that dividing it evenly into 7 columns
+	   naturally produces reasonably-sized cells without needing a fixed
+	   pixel size or per-cell capping/centering — the same reasoning, just
+	   applied at a width where full-width division doesn't produce
+	   oversized cells the way it did on a wide desktop pane. */
 	.habit-tracker-month-grid {
+		grid-template-columns: repeat(7, minmax(0, 1fr));
 		gap: 4px;
+	}
+
+	.habit-tracker-month-grid .habit-tracker-week-cell {
+		width: 100%;
 	}
 
 	/* Obsidian's own CSS flips .setting-item from row to column layout at
