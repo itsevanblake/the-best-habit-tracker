@@ -34,6 +34,15 @@ interface HabitDefinition {
 	alarmEnabled?: boolean;
 	alarmTime?: string; // "HH:MM", 24h, local time
 	alarmRepeatMinutes?: number; // default 10 if alarmEnabled but unset
+	// Twice Daily (habit kind only): opt-in second occurrence per day
+	// ("Morning"/"Evening"), each independently checkable. Either occurrence
+	// done counts the day toward streaks (see EntryValue). alarmEnabled2/
+	// alarmTime2/alarmRepeatMinutes2 mirror the existing alarm* fields above
+	// but drive the Evening occurrence's own alarm.
+	twiceDaily?: boolean;
+	alarmEnabled2?: boolean;
+	alarmTime2?: string; // "HH:MM", 24h, local time
+	alarmRepeatMinutes2?: number; // default 10 if alarmEnabled2 but unset
 }
 
 // A generic, non-habit-tied nag — "last call" for whatever the name
@@ -49,10 +58,14 @@ interface LastCallAlarm {
 	enabled: boolean;
 }
 
-// A day can be a full completion (true) or the minimum/2-minute-rule
-// version (Law 3) — both count toward streaks ("showing up" is what
-// matters), but render differently so the distinction stays visible.
-type EntryValue = true | "min";
+// A day can be a full completion (true), the minimum/2-minute-rule version
+// (Law 3), or — for a Twice Daily habit — an object tracking each named
+// occurrence independently. All forms count toward streaks ("showing up" is
+// what matters), but render differently so the distinction stays visible.
+// Invariant: never persist an empty occurrence object — when both
+// occurrences are cleared, delete the entries[dateStr] key entirely, same as
+// today.
+type EntryValue = true | "min" | { morning?: true; evening?: true };
 
 interface PluginData {
 	habits: HabitDefinition[];
@@ -624,10 +637,16 @@ async function reviewHabitFormula(plugin: HabitTrackerPlugin, fields: Record<For
 	}
 
 	const text: string = response.json?.content?.[0]?.text ?? "";
+	// Claude sometimes wraps the JSON in a ```json fence or adds a stray
+	// sentence around it despite the system prompt asking for bare JSON —
+	// pull out the outermost {...} rather than requiring the whole
+	// response to be valid JSON on its own.
+	const match = text.match(/\{[\s\S]*\}/);
 	try {
-		return JSON.parse(text) as FormulaReview;
+		return JSON.parse(match ? match[0] : text) as FormulaReview;
 	} catch {
-		throw new Error("Couldn't parse the AI's response — try again.");
+		const snippet = text.trim().slice(0, 200);
+		throw new Error(`Couldn't parse the AI's response.${snippet ? ` Got: "${snippet}"` : " Got an empty response."}`);
 	}
 }
 
