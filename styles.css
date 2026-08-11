@@ -938,14 +938,30 @@ body.theme-dark {
 	margin-bottom: 6px;
 }
 
+/* Unlike .habit-tracker-week-grid (a flex row where flex:1 + a 76px
+   max-width naturally keeps 7 cells small), this is a CSS grid — each of
+   the 7 `1fr` columns claims a full 1/7 share of the card's width with no
+   natural cap the way Year's 53 week-columns get one for free. Capping
+   the track width itself (not just the cell inside it) via minmax(...,
+   48px) is what actually shrinks the grid; centering it with
+   justify-content keeps the now-narrower grid from sitting flush left
+   with a wide gap of empty card to its right. */
 .habit-tracker-month-grid {
 	display: grid;
-	grid-template-columns: repeat(7, 1fr);
+	grid-template-columns: repeat(7, minmax(0, 48px));
+	justify-content: center;
 	gap: 6px;
 }
 
 .habit-tracker-month-grid .habit-tracker-week-cell {
-	max-width: none;
+	max-width: 48px;
+}
+
+/* Month cells are half the size of Week's 76px cells, so Week's date-label
+   font-size (1.35em, sized for the bigger box) reads oversized/cramped
+   here — scale it down to match. */
+.habit-tracker-month-grid .habit-tracker-week-date-label {
+	font-size: 1.05em;
 }
 
 /* ---- Add habit card ---- */
