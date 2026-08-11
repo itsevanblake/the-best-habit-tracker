@@ -674,6 +674,7 @@ body.theme-dark {
 
 .habit-tracker-cell {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	width: 100%;
@@ -694,6 +695,28 @@ body.theme-dark {
 
 .habit-tracker-cell-done .habit-tracker-cell-daynum {
 	color: var(--habit-color-contrast, var(--text-on-accent));
+}
+
+/* Twice Daily's per-day completion count (1 or 2 occurrences), rendered as
+   small tally strokes directly under the day number. Only ever created for
+   Twice Daily habits — see renderCell's tallyEl — so regular habits (always
+   0 or 1 per day, already conveyed by the cell's own done/not-done color)
+   never get this element at all. Empty text when the count is 0 keeps the
+   cell's layout stable rather than shifting the day number as marks
+   appear/disappear. */
+.habit-tracker-cell-tally {
+	font-size: 0.6em;
+	line-height: 1;
+	letter-spacing: 1px;
+	color: var(--text-faint);
+	pointer-events: none;
+	user-select: none;
+	min-height: 0.6em;
+}
+
+.habit-tracker-cell-done .habit-tracker-cell-tally {
+	color: var(--habit-color-contrast, var(--text-on-accent));
+	opacity: 0.85;
 }
 
 .habit-tracker-cell:hover {
@@ -837,6 +860,7 @@ body.theme-dark {
 
 .habit-tracker-yeardays-cell {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
 	width: 26px;
@@ -876,6 +900,11 @@ body.theme-dark {
 
 .habit-tracker-yeardays-cell .habit-tracker-cell-daynum {
 	font-size: 0.6em;
+}
+
+.habit-tracker-yeardays-cell .habit-tracker-cell-tally {
+	font-size: 0.5em;
+	min-height: 0.5em;
 }
 
 /* A past day with no entry — a clearly greyed-out fill (the full,

@@ -2828,14 +2828,30 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.setAttr("aria-label", dateStr);
 		}
 
+		// Twice Daily habits can rack up more than one completion on a given
+		// day (morning + evening) — a small tally mark under the day number
+		// makes that count visible at a glance instead of the cell just
+		// reading "done" either way. Regular habits are always 0 or 1 per
+		// day, which the cell's own done/not-done color already conveys, so
+		// no tally element is created for them at all.
+		let tallyEl: HTMLElement | undefined;
 		if (style === "week") {
 			cell.createDiv({ text: d.toLocaleString("default", { weekday: "short" }), cls: "habit-tracker-week-day-label" });
 			cell.createDiv({ text: "" + d.getDate(), cls: "habit-tracker-week-date-label" });
+			if (habit.twiceDaily) tallyEl = cell.createDiv({ cls: "habit-tracker-cell-tally" });
 		} else if (style === "month") {
 			cell.createDiv({ text: "" + d.getDate(), cls: "habit-tracker-week-date-label" });
+			if (habit.twiceDaily) tallyEl = cell.createDiv({ cls: "habit-tracker-cell-tally" });
 		} else {
 			cell.createSpan({ text: "" + (dayNumberOverride ?? d.getDate()), cls: "habit-tracker-cell-daynum" });
+			if (habit.twiceDaily) tallyEl = cell.createSpan({ cls: "habit-tracker-cell-tally" });
 		}
+		const updateTally = (v: EntryValue | undefined) => {
+			if (!tallyEl) return;
+			const count = v === undefined ? 0 : occurrenceCount(v);
+			tallyEl.setText(count > 0 ? "❙".repeat(count) : "");
+		};
+		updateTally(entries[dateStr]);
 
 		const futureCls = boxed ? "habit-tracker-week-cell-future" : "habit-tracker-cell-future";
 		const doneCls = boxed ? "habit-tracker-week-cell-done" : "habit-tracker-cell-done";
@@ -2876,6 +2892,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			} else {
 				entries[dateStr] = next;
 			}
+			updateTally(next);
 			await this.plugin.persist();
 			if (!next) {
 				// Clearing a day isn't a reward moment — refresh immediately.
