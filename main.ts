@@ -2255,9 +2255,13 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const month = today.getMonth();
 		const first = new Date(year, month, 1);
 		const lastOfMonth = new Date(year, month + 1, 0);
-		const start = addDays(first, -first.getDay()); // Sunday on/before the 1st
-		const totalDays = Math.round((lastOfMonth.getTime() - start.getTime()) / 86400000) + 1;
-		const weeks = Math.ceil(totalDays / 7);
+		// Day 1 always starts in column 1 (no leading blank cells aligning it
+		// to its real weekday) — there's no weekday header anymore, so
+		// calendar-aligning it just left day 1 stranded wherever its weekday
+		// happened to fall with a run of empty cells before it.
+		const start = first;
+		const daysInMonth = lastOfMonth.getDate();
+		const weeks = Math.ceil(daysInMonth / 7);
 
 		container.createDiv({ text: first.toLocaleString("default", { month: "long", year: "numeric" }), cls: "habit-tracker-month-title" });
 
@@ -2267,6 +2271,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			for (let col = 0; col < 7; col++) {
 				const d = addDays(start, w * 7 + col);
 				if (d.getMonth() !== month || d.getFullYear() !== year) {
+					// Only trips for the trailing cells past the month's last
+					// day (e.g. a 5-cell final row) — start is always the 1st.
 					gridEl.createDiv({ cls: "habit-tracker-week-cell habit-tracker-cell-blank" });
 					continue;
 				}

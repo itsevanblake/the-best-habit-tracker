@@ -938,9 +938,9 @@ body.theme-dark {
 /* 1fr columns so the grid spans the card's full width edge-to-edge, like
    Year view's row does — cells touch each other (gap is the only space
    between them) instead of sitting as a small clump off to one side.
-   Squaring these via aspect-ratio would make them huge (7 columns means
-   each 1fr track is wide), so cells are wide rectangles instead — full
-   width, capped height — rather than forcing a 1:1 square. */
+   Squares at full width are necessarily bigger than a small fixed size
+   (only 7 columns to divide the card's width across), but that's the
+   requested tradeoff over rectangles or a small centered clump. */
 .habit-tracker-month-grid {
 	display: grid;
 	grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -948,16 +948,8 @@ body.theme-dark {
 }
 
 .habit-tracker-month-grid .habit-tracker-week-cell {
-	aspect-ratio: auto;
-	height: 50px;
+	aspect-ratio: 1 / 1;
 	max-width: none;
-}
-
-/* Month cells are shorter than Week's 76px square cells, so Week's
-   date-label font-size (1.35em, sized for the bigger box) reads
-   oversized/cramped here — scale it down to match. */
-.habit-tracker-month-grid .habit-tracker-week-date-label {
-	font-size: 1em;
 }
 
 /* ---- Add habit card ---- */
