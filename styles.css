@@ -935,21 +935,23 @@ body.theme-dark {
 	color: var(--text-muted);
 }
 
-/* 1fr columns so the grid spans the card's full width edge-to-edge, like
-   Year view's row does — cells touch each other (gap is the only space
-   between them) instead of sitting as a small clump off to one side.
-   Squares at full width are necessarily bigger than a small fixed size
-   (only 7 columns to divide the card's width across), but that's the
-   requested tradeoff over rectangles or a small centered clump. */
+/* 1fr columns so the grid still spans the card's full width edge-to-edge,
+   like Year view's row does. Each square is capped smaller than its full
+   track width and centered within that track (justify-items), so the
+   grid keeps filling the card but the boxes themselves read smaller —
+   evenly-spaced gaps on both sides of each cell instead of the
+   uncapped/full-track-width squares from before. */
 .habit-tracker-month-grid {
 	display: grid;
 	grid-template-columns: repeat(7, minmax(0, 1fr));
+	justify-items: center;
 	gap: 6px;
 }
 
 .habit-tracker-month-grid .habit-tracker-week-cell {
 	aspect-ratio: 1 / 1;
-	max-width: none;
+	width: 100%;
+	max-width: 90px;
 }
 
 /* ---- Add habit card ---- */
