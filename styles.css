@@ -330,13 +330,13 @@ body.theme-dark {
 	color: var(--text-on-accent);
 }
 
-.habit-tracker-month-nav {
+.habit-tracker-view-nav {
 	display: flex;
 	align-items: center;
 	gap: 4px;
 }
 
-.habit-tracker-month-nav-btn {
+.habit-tracker-view-nav-btn {
 	flex-shrink: 0;
 	width: 26px;
 	height: 26px;
@@ -353,13 +353,13 @@ body.theme-dark {
 	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
-.habit-tracker-month-nav-btn:hover {
+.habit-tracker-view-nav-btn:hover {
 	background-color: var(--background-modifier-hover);
 	border-color: var(--interactive-accent);
 	color: var(--text-normal);
 }
 
-.habit-tracker-month-nav-label {
+.habit-tracker-view-nav-label {
 	font-size: 0.78em;
 	font-weight: 500;
 	color: var(--text-muted);

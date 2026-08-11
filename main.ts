@@ -1632,6 +1632,9 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	// Purely in-memory per-block state like currentView — not persisted to
 	// data.json, and resets to 0 (today's month) on every fresh block load.
 	selectedMonthOffset: number = 0;
+	// Same idea, for Week view: an integer offset in weeks from the real
+	// current week (0 = this week, +1 = next, -1 = previous, ...).
+	selectedWeekOffset: number = 0;
 	// Remembers each habit's year-view horizontal scroll position across
 	// re-renders (every click triggers a full rebuild via refreshAll,
 	// which would otherwise reset scroll back to January every time).
@@ -1714,8 +1717,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		});
 
 		if (this.currentView === "month") {
-			const monthNav = leftGroup.createDiv({ cls: "habit-tracker-month-nav" });
-			const prevBtn = monthNav.createEl("button", { text: "◀", cls: "habit-tracker-month-nav-btn" });
+			const monthNav = leftGroup.createDiv({ cls: "habit-tracker-view-nav" });
+			const prevBtn = monthNav.createEl("button", { text: "◀", cls: "habit-tracker-view-nav-btn" });
 			prevBtn.type = "button";
 			prevBtn.setAttr("aria-label", "Previous month");
 			prevBtn.onclick = () => {
@@ -1726,13 +1729,40 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			navMonth.setMonth(navMonth.getMonth() + this.selectedMonthOffset);
 			monthNav.createSpan({
 				text: navMonth.toLocaleString("default", { month: "long", year: "numeric" }),
-				cls: "habit-tracker-month-nav-label",
+				cls: "habit-tracker-view-nav-label",
 			});
-			const nextBtn = monthNav.createEl("button", { text: "▶", cls: "habit-tracker-month-nav-btn" });
+			const nextBtn = monthNav.createEl("button", { text: "▶", cls: "habit-tracker-view-nav-btn" });
 			nextBtn.type = "button";
 			nextBtn.setAttr("aria-label", "Next month");
 			nextBtn.onclick = () => {
 				this.selectedMonthOffset += 1;
+				this.render();
+			};
+		}
+
+		if (this.currentView === "week") {
+			const weekNav = leftGroup.createDiv({ cls: "habit-tracker-view-nav" });
+			const prevBtn = weekNav.createEl("button", { text: "◀", cls: "habit-tracker-view-nav-btn" });
+			prevBtn.type = "button";
+			prevBtn.setAttr("aria-label", "Previous week");
+			prevBtn.onclick = () => {
+				this.selectedWeekOffset -= 1;
+				this.render();
+			};
+			const navWeekStart = addDays(addDays(new Date(), -new Date().getDay()), this.selectedWeekOffset * 7);
+			const navWeekEnd = addDays(navWeekStart, 6);
+			const sameYear = navWeekStart.getFullYear() === navWeekEnd.getFullYear();
+			const startLabel = navWeekStart.toLocaleString("default", { month: "short", day: "numeric", year: sameYear ? undefined : "numeric" });
+			const endLabel = navWeekEnd.toLocaleString("default", { month: "short", day: "numeric", year: "numeric" });
+			weekNav.createSpan({
+				text: `${startLabel} – ${endLabel}`,
+				cls: "habit-tracker-view-nav-label",
+			});
+			const nextBtn = weekNav.createEl("button", { text: "▶", cls: "habit-tracker-view-nav-btn" });
+			nextBtn.type = "button";
+			nextBtn.setAttr("aria-label", "Next week");
+			nextBtn.onclick = () => {
+				this.selectedWeekOffset += 1;
 				this.render();
 			};
 		}
@@ -2200,7 +2230,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const grid = card.createDiv({ cls: "habit-tracker-grid-wrap" });
 		grid.setAttr("data-habit-id", habit.id);
 		if (view === "week") {
-			this.renderWeekGrid(grid, habit, entries);
+			this.renderWeekGrid(grid, habit, entries, this.selectedWeekOffset);
 		} else if (view === "month") {
 			this.renderMonthGrid(grid, habit, entries, this.selectedMonthOffset);
 		} else if (view === "yeardays") {
@@ -2269,9 +2299,9 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		});
 	}
 
-	renderWeekGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
+	renderWeekGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>, weekOffset: number = 0) {
 		const today = new Date();
-		const start = addDays(today, -today.getDay()); // Sunday of this week
+		const start = addDays(addDays(today, -today.getDay()), weekOffset * 7); // Sunday of the selected week
 
 		const gridEl = container.createDiv({ cls: "habit-tracker-week-grid" });
 		for (let i = 0; i < 7; i++) {
