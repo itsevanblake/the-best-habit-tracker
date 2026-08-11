@@ -367,6 +367,25 @@ body.theme-dark {
 	text-align: center;
 }
 
+.habit-tracker-view-today-btn {
+	flex-shrink: 0;
+	height: 26px;
+	padding: 0 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ht-radius-pill);
+	background-color: var(--background-secondary);
+	color: var(--interactive-accent);
+	cursor: pointer;
+	font-size: 0.72em;
+	font-weight: 600;
+	transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.habit-tracker-view-today-btn:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
 /* ---- Habit card ---- */
 
 .habit-tracker-habit {
@@ -881,6 +900,16 @@ body.theme-dark {
 	outline-offset: -1px;
 }
 
+/* Twice Daily habit with exactly one occurrence (morning/evening) done —
+   kept as its own class rather than reusing -min since "minimum version"
+   and "partial occurrence" are unrelated concepts that just happen to look
+   alike, not because the CSS itself differs. */
+.habit-tracker-cell-partial {
+	opacity: 0.55;
+	outline: 1px dashed var(--habit-color, var(--text-muted));
+	outline-offset: -1px;
+}
+
 /* ---- Week grid ---- */
 
 .habit-tracker-week-grid {
@@ -932,6 +961,12 @@ body.theme-dark {
 }
 
 .habit-tracker-week-cell-min {
+	opacity: 0.6;
+	outline: 2px dashed var(--habit-color, var(--text-muted));
+	outline-offset: -2px;
+}
+
+.habit-tracker-week-cell-partial {
 	opacity: 0.6;
 	outline: 2px dashed var(--habit-color, var(--text-muted));
 	outline-offset: -2px;

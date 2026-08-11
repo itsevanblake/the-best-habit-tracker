@@ -435,6 +435,34 @@ function nextEntryValue(current: EntryValue | undefined): EntryValue | undefined
 	return current === undefined ? true : undefined;
 }
 
+// Same idea as nextEntryValue, but for a Twice Daily habit: a 3-state cycle
+// (none -> one occurrence done -> both done -> none) instead of a 2-state
+// toggle. Chosen over per-occurrence click targets (e.g. splitting the cell
+// in half) because Year/Year-Days cells are too small for two independent
+// tap targets, especially on mobile.
+function nextEntryValueTwiceDaily(current: EntryValue | undefined): EntryValue | undefined {
+	if (current === undefined) return { morning: true };
+	if (current === true || current === "min") return undefined; // legacy value -> terminal, clears
+	if (current.morning && current.evening) return undefined;
+	return { morning: true, evening: true };
+}
+
+// True when a value represents a Twice Daily habit with exactly one of its
+// two occurrences done (used to add the dashed "-partial" render class).
+function isPartialOccurrence(v: EntryValue): boolean {
+	return typeof v === "object" && !(v.morning && v.evening);
+}
+
+// Whether a specific occurrence ("morning"/"evening") is done for a given
+// habit/date — used by checkAlarm()'s per-slot loop. A legacy plain-`true`
+// value counts as done for either slot (see EntryValue's migration note).
+function occurrenceDone(entries: Record<string, EntryValue> | undefined, date: string, occurrence: "morning" | "evening"): boolean {
+	const v = entries?.[date];
+	if (v === true) return true;
+	if (typeof v === "object") return !!v[occurrence];
+	return false;
+}
+
 interface HabitLevers {
 	// The Complete Habit Formula — Clear's own four-part sentence, one
 	// field per Law, in order:
@@ -457,6 +485,10 @@ interface HabitFormValues extends HabitLevers {
 	alarmEnabled: boolean;
 	alarmTime: string;
 	alarmRepeatMinutes: number;
+	twiceDaily: boolean;
+	alarmEnabled2: boolean;
+	alarmTime2: string;
+	alarmRepeatMinutes2: number;
 }
 
 // The Complete Habit Formula fields, matching the Four Laws 1:1.
@@ -740,6 +772,10 @@ class HabitFormModal extends Modal {
 			alarmEnabled: opts.initial?.alarmEnabled ?? false,
 			alarmTime: opts.initial?.alarmTime ?? "20:00",
 			alarmRepeatMinutes: opts.initial?.alarmRepeatMinutes ?? 10,
+			twiceDaily: opts.initial?.twiceDaily ?? false,
+			alarmEnabled2: opts.initial?.alarmEnabled2 ?? false,
+			alarmTime2: opts.initial?.alarmTime2 ?? "08:00",
+			alarmRepeatMinutes2: opts.initial?.alarmRepeatMinutes2 ?? 10,
 			stackedAfter: opts.initial?.stackedAfter ?? "",
 			craving: opts.initial?.craving ?? "",
 			minimumVersion: opts.initial?.minimumVersion ?? "",
@@ -819,6 +855,13 @@ class HabitFormModal extends Modal {
 			const isTask = this.values.kind === "task";
 			habitOnlySections.forEach((el) => el.toggleClass("habit-tracker-kind-hidden", isTask));
 			scheduledDateSetting.settingEl.toggleClass("habit-tracker-kind-hidden", !isTask);
+			// Evening Alarm has a second, independent visibility condition
+			// (Twice Daily) on top of the habit/task split every other
+			// habit-only section uses, so it's re-applied here rather than
+			// living in habitOnlySections — a task is never twiceDaily
+			// (nulled in both save handlers), so isTask alone is always
+			// enough to force it hidden regardless of the stale toggle value.
+			eveningAlarmWrap.toggleClass("habit-tracker-kind-hidden", isTask || !this.values.twiceDaily);
 		};
 
 		let kindSelectEl: HTMLSelectElement;
@@ -1070,12 +1113,32 @@ class HabitFormModal extends Modal {
 			};
 		}
 
+		// Twice Daily — habit-only (hidden for a task, same as Type above):
+		// opt-in second occurrence per day ("Morning"/"Evening"), each
+		// independently checkable. Placed immediately above the alarm
+		// section since it changes that section's own heading/shape.
+		const twiceDailyWrap = contentEl.createDiv();
+		habitOnlySections.push(twiceDailyWrap);
+		new Setting(twiceDailyWrap)
+			.setName("Twice Daily")
+			.setDesc("Track this habit as two independent occurrences per day (e.g. a morning and an evening meditation) instead of one.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.values.twiceDaily).onChange((value) => {
+					this.values.twiceDaily = value;
+					alarmHeadingEl.setText(value ? "Morning Alarm" : "Check-in Alarm");
+					eveningAlarmWrap.toggleClass("habit-tracker-kind-hidden", !value);
+				})
+			);
+
 		// Per-habit check-in alarm — habit-only (hidden for a task, same as
 		// Type above), since the firing condition is "not checked in today,"
-		// which isn't meaningful for a one-off scheduled item.
+		// which isn't meaningful for a one-off scheduled item. When Twice
+		// Daily is on, this section becomes the Morning occurrence's alarm
+		// and a second, identically-shaped Evening Alarm section appears
+		// below it.
 		const alarmWrap = contentEl.createDiv();
 		habitOnlySections.push(alarmWrap);
-		alarmWrap.createEl("h4", { text: "Check-in Alarm" });
+		const alarmHeadingEl = alarmWrap.createEl("h4", { text: this.values.twiceDaily ? "Morning Alarm" : "Check-in Alarm" });
 		alarmWrap.createEl("p", {
 			cls: "setting-item-description",
 			text: "Once the alarm time passes local time with this habit not yet checked in today, nag (sound + banner) every few minutes until it is.",
@@ -1106,6 +1169,43 @@ class HabitFormModal extends Modal {
 					const n = parseInt(value, 10);
 					if (!Number.isFinite(n) || n <= 0) return;
 					this.values.alarmRepeatMinutes = n;
+				})
+			);
+
+		// Evening occurrence's alarm — identical shape to the section above,
+		// writing to the alarm*2 fields instead. Shown/hidden via the same
+		// habit-tracker-kind-hidden class habitOnlySections already uses,
+		// just toggled by the Twice Daily switch instead of Kind.
+		const eveningAlarmWrap = contentEl.createDiv();
+		eveningAlarmWrap.toggleClass("habit-tracker-kind-hidden", this.values.kind === "task" || !this.values.twiceDaily);
+		eveningAlarmWrap.createEl("h4", { text: "Evening Alarm" });
+		eveningAlarmWrap.createEl("p", {
+			cls: "setting-item-description",
+			text: "Once the alarm time passes local time with this habit's evening occurrence not yet checked in today, nag (sound + banner) every few minutes until it is.",
+		});
+		new Setting(eveningAlarmWrap).setName("Enable alarm").addToggle((toggle) =>
+			toggle.setValue(this.values.alarmEnabled2).onChange((value) => {
+				this.values.alarmEnabled2 = value;
+			})
+		);
+		new Setting(eveningAlarmWrap)
+			.setName("Alarm time")
+			.setDesc("24-hour local time (HH:MM).")
+			.addText((text) => {
+				text.inputEl.type = "time";
+				text.setValue(this.values.alarmTime2).onChange((value) => {
+					if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return;
+					this.values.alarmTime2 = value;
+				});
+			});
+		new Setting(eveningAlarmWrap)
+			.setName("Repeat every (minutes)")
+			.setDesc("How often to re-nag once the alarm time has passed and it's still not checked in.")
+			.addText((text) =>
+				text.setValue("" + this.values.alarmRepeatMinutes2).onChange((value) => {
+					const n = parseInt(value, 10);
+					if (!Number.isFinite(n) || n <= 0) return;
+					this.values.alarmRepeatMinutes2 = n;
 				})
 			);
 
@@ -1996,6 +2096,15 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.selectedMonthOffset += 1;
 				this.render();
 			};
+			if (this.selectedMonthOffset !== 0) {
+				const todayBtn = monthNav.createEl("button", { text: "Today", cls: "habit-tracker-view-today-btn" });
+				todayBtn.type = "button";
+				todayBtn.setAttr("aria-label", "Back to current month");
+				todayBtn.onclick = () => {
+					this.selectedMonthOffset = 0;
+					this.render();
+				};
+			}
 		}
 
 		if (this.currentView === "week") {
@@ -2023,6 +2132,15 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.selectedWeekOffset += 1;
 				this.render();
 			};
+			if (this.selectedWeekOffset !== 0) {
+				const todayBtn = weekNav.createEl("button", { text: "Today", cls: "habit-tracker-view-today-btn" });
+				todayBtn.type = "button";
+				todayBtn.setAttr("aria-label", "Back to current week");
+				todayBtn.onclick = () => {
+					this.selectedWeekOffset = 0;
+					this.render();
+				};
+			}
 		}
 
 		if (!this.filterName) {
@@ -2099,6 +2217,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					alarmEnabled: values.kind === "task" ? undefined : values.alarmEnabled,
 					alarmTime: values.kind === "task" ? undefined : values.alarmTime,
 					alarmRepeatMinutes: values.kind === "task" ? undefined : values.alarmRepeatMinutes,
+					twiceDaily: values.kind === "task" ? undefined : values.twiceDaily,
+					alarmEnabled2: values.kind === "task" ? undefined : values.alarmEnabled2,
+					alarmTime2: values.kind === "task" ? undefined : values.alarmTime2,
+					alarmRepeatMinutes2: values.kind === "task" ? undefined : values.alarmRepeatMinutes2,
 					stackedAfter: values.stackedAfter || undefined,
 					craving: values.craving || undefined,
 					minimumVersion: values.minimumVersion || undefined,
@@ -2410,6 +2532,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					habit.alarmEnabled = values.kind === "task" ? undefined : values.alarmEnabled;
 					habit.alarmTime = values.kind === "task" ? undefined : values.alarmTime;
 					habit.alarmRepeatMinutes = values.kind === "task" ? undefined : values.alarmRepeatMinutes;
+					habit.twiceDaily = values.kind === "task" ? undefined : values.twiceDaily;
+					habit.alarmEnabled2 = values.kind === "task" ? undefined : values.alarmEnabled2;
+					habit.alarmTime2 = values.kind === "task" ? undefined : values.alarmTime2;
+					habit.alarmRepeatMinutes2 = values.kind === "task" ? undefined : values.alarmRepeatMinutes2;
 					habit.stackedAfter = values.stackedAfter || undefined;
 					habit.craving = values.craving || undefined;
 					habit.minimumVersion = values.minimumVersion || undefined;
@@ -2666,6 +2792,9 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			if (entries[dateStr] === "min") {
 				cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
 			}
+			if (isPartialOccurrence(entries[dateStr])) {
+				cell.addClass(boxed ? "habit-tracker-week-cell-partial" : "habit-tracker-cell-partial");
+			}
 		} else if (dateStr < todayStr()) {
 			// A day strictly before today with no entry — visibly greyed out
 			// so a gap in the streak reads at a glance, in every view (year,
@@ -2682,7 +2811,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 		cell.onclick = async () => {
 			const oldStreak = computeStats(entries).streak;
-			const next = nextEntryValue(entries[dateStr]);
+			const next = habit.twiceDaily ? nextEntryValueTwiceDaily(entries[dateStr]) : nextEntryValue(entries[dateStr]);
 			if (next === undefined) {
 				delete entries[dateStr];
 			} else {
@@ -2701,6 +2830,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.style.backgroundColor = habit.color;
 			cell.addClass(doneCls);
 			if (next === "min") cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
+			cell.removeClass(boxed ? "habit-tracker-week-cell-partial" : "habit-tracker-cell-partial");
+			if (isPartialOccurrence(next)) cell.addClass(boxed ? "habit-tracker-week-cell-partial" : "habit-tracker-cell-partial");
 			cell.addClass("habit-tracker-cell-pop");
 			const newStreak = computeStats(entries).streak;
 			if (this.plugin.settings.celebrationEffectsEnabled) {
@@ -2912,18 +3043,34 @@ export default class HabitTrackerPlugin extends Plugin {
 		}
 
 		for (const habit of this.data.habits) {
-			if (habit.kind === "task" || !habit.alarmEnabled || !habit.alarmTime) continue;
-			if (nowStr < habit.alarmTime) continue;
-			if (this.data.entries[habit.id]?.[today] === true) continue;
+			if (habit.kind === "task") continue;
 
-			const repeatMinutes = habit.alarmRepeatMinutes && habit.alarmRepeatMinutes > 0 ? habit.alarmRepeatMinutes : 10;
-			const lastFired = this.habitAlarmLastFiredAt.get(habit.id);
-			if (lastFired !== undefined && nowMs - lastFired < repeatMinutes * 60000) continue;
+			// Twice Daily habits get two independent alarm slots (Morning ==
+			// the existing alarmEnabled/alarmTime/alarmRepeatMinutes fields,
+			// Evening == the new *2 fields); everyone else keeps exactly one
+			// slot with today's behavior (empty label, no map-key suffix).
+			const slots = habit.twiceDaily
+				? [
+						{ enabled: habit.alarmEnabled, time: habit.alarmTime, repeatMinutes: habit.alarmRepeatMinutes, occurrence: "morning" as const, keySuffix: "", label: " (Morning)" },
+						{ enabled: habit.alarmEnabled2, time: habit.alarmTime2, repeatMinutes: habit.alarmRepeatMinutes2, occurrence: "evening" as const, keySuffix: ":evening", label: " (Evening)" },
+				  ]
+				: [{ enabled: habit.alarmEnabled, time: habit.alarmTime, repeatMinutes: habit.alarmRepeatMinutes, occurrence: "morning" as const, keySuffix: "", label: "" }];
 
-			this.habitAlarmLastFiredAt.set(habit.id, nowMs);
-			playAlarmChime();
-			const notice = new Notice(`⏰ "${habit.name}" not checked in yet`, 15000);
-			notice.noticeEl.addClass("habit-tracker-alarm-notice");
+			for (const slot of slots) {
+				if (!slot.enabled || !slot.time) continue;
+				if (nowStr < slot.time) continue;
+				if (occurrenceDone(this.data.entries[habit.id], today, slot.occurrence)) continue;
+
+				const repeatMinutes = slot.repeatMinutes && slot.repeatMinutes > 0 ? slot.repeatMinutes : 10;
+				const mapKey = habit.id + slot.keySuffix;
+				const lastFired = this.habitAlarmLastFiredAt.get(mapKey);
+				if (lastFired !== undefined && nowMs - lastFired < repeatMinutes * 60000) continue;
+
+				this.habitAlarmLastFiredAt.set(mapKey, nowMs);
+				playAlarmChime();
+				const notice = new Notice(`⏰ "${habit.name}"${slot.label} not checked in yet`, 15000);
+				notice.noticeEl.addClass("habit-tracker-alarm-notice");
+			}
 		}
 
 		for (const alarm of this.settings.lastCallAlarms) {
