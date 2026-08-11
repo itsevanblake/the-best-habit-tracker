@@ -1627,6 +1627,11 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	plugin: HabitTrackerPlugin;
 	filterName: string | null;
 	currentView: ViewMode;
+	// Which month the Month view is browsing to, as an integer offset from
+	// the real current month (0 = this month, +1 = next, -1 = previous, ...).
+	// Purely in-memory per-block state like currentView — not persisted to
+	// data.json, and resets to 0 (today's month) on every fresh block load.
+	selectedMonthOffset: number = 0;
 	// Remembers each habit's year-view horizontal scroll position across
 	// re-renders (every click triggers a full rebuild via refreshAll,
 	// which would otherwise reset scroll back to January every time).
@@ -1707,6 +1712,30 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.render();
 			};
 		});
+
+		if (this.currentView === "month") {
+			const monthNav = leftGroup.createDiv({ cls: "habit-tracker-month-nav" });
+			const prevBtn = monthNav.createEl("button", { text: "◀", cls: "habit-tracker-month-nav-btn" });
+			prevBtn.type = "button";
+			prevBtn.setAttr("aria-label", "Previous month");
+			prevBtn.onclick = () => {
+				this.selectedMonthOffset -= 1;
+				this.render();
+			};
+			const navMonth = new Date();
+			navMonth.setMonth(navMonth.getMonth() + this.selectedMonthOffset);
+			monthNav.createSpan({
+				text: navMonth.toLocaleString("default", { month: "long", year: "numeric" }),
+				cls: "habit-tracker-month-nav-label",
+			});
+			const nextBtn = monthNav.createEl("button", { text: "▶", cls: "habit-tracker-month-nav-btn" });
+			nextBtn.type = "button";
+			nextBtn.setAttr("aria-label", "Next month");
+			nextBtn.onclick = () => {
+				this.selectedMonthOffset += 1;
+				this.render();
+			};
+		}
 
 		if (!this.filterName) {
 			const gearBtn = toggleRow.createEl("button", { text: "⚙️", cls: "habit-tracker-gear-btn" });
@@ -2173,7 +2202,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		if (view === "week") {
 			this.renderWeekGrid(grid, habit, entries);
 		} else if (view === "month") {
-			this.renderMonthGrid(grid, habit, entries);
+			this.renderMonthGrid(grid, habit, entries, this.selectedMonthOffset);
 		} else if (view === "yeardays") {
 			this.renderYearDaysGrid(grid, habit, entries);
 		} else {
@@ -2251,11 +2280,11 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 	}
 
-	renderMonthGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>) {
+	renderMonthGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>, monthOffset: number = 0) {
 		const today = new Date();
-		const year = today.getFullYear();
-		const month = today.getMonth();
-		const first = new Date(year, month, 1);
+		const first = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+		const year = first.getFullYear();
+		const month = first.getMonth();
 		const lastOfMonth = new Date(year, month + 1, 0);
 		// Day 1 always starts in column 1 (no leading blank cells aligning it
 		// to its real weekday) — there's no weekday header anymore, so

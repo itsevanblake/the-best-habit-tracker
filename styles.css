@@ -330,6 +330,43 @@ body.theme-dark {
 	color: var(--text-on-accent);
 }
 
+.habit-tracker-month-nav {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.habit-tracker-month-nav-btn {
+	flex-shrink: 0;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ht-radius-md);
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 0.75em;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.habit-tracker-month-nav-btn:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+}
+
+.habit-tracker-month-nav-label {
+	font-size: 0.78em;
+	font-weight: 500;
+	color: var(--text-muted);
+	min-width: 8em;
+	text-align: center;
+}
+
 /* ---- Habit card ---- */
 
 .habit-tracker-habit {
