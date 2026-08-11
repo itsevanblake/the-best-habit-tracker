@@ -338,6 +338,17 @@ interface Stats {
 	totalThisWeek: number;
 	totalThisMonth: number;
 	totalThisYear: number;
+	totalOccurrences: number;
+}
+
+// Number of individual occurrences a single day's entry value represents:
+// 1 for a plain completion (true/"min"), and for a Twice Daily object, 1 per
+// occurrence actually marked done (0, 1, or 2). Lets totalOccurrences count
+// a day with both morning AND evening done as 2, instead of computeStats's
+// truthy-day counting (`total`) which treats it the same as a single done.
+function occurrenceCount(v: EntryValue): number {
+	if (typeof v === "object") return (v.morning ? 1 : 0) + (v.evening ? 1 : 0);
+	return 1;
 }
 
 function computeStats(entries: Record<string, EntryValue>): Stats {
@@ -345,6 +356,7 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 	let totalThisWeek = 0;
 	let totalThisMonth = 0;
 	let totalThisYear = 0;
+	let totalOccurrences = 0;
 	const now = new Date();
 	const currentYear = "" + now.getFullYear();
 	const currentYearMonth = currentYear + "-" + pad(now.getMonth() + 1);
@@ -354,6 +366,7 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 	for (const date in entries) {
 		if (entries[date]) {
 			total++;
+			totalOccurrences += occurrenceCount(entries[date]);
 			if (date.startsWith(currentYear)) totalThisYear++;
 			if (date.startsWith(currentYearMonth)) totalThisMonth++;
 			if (date >= weekStart && date <= weekEnd) totalThisWeek++;
@@ -380,7 +393,7 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 		cursor = addDays(cursor, -1);
 	}
 
-	return { streak, bestStreak: computeBestStreak(entries), total, totalThisWeek, totalThisMonth, totalThisYear };
+	return { streak, bestStreak: computeBestStreak(entries), total, totalThisWeek, totalThisMonth, totalThisYear, totalOccurrences };
 }
 
 // Longest streak ever achieved (same forgiving one-gap rule as the current
@@ -2499,6 +2512,16 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const totalPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
 		totalPill.createSpan({ text: `${stats.total}`, cls: "habit-tracker-pill-value" });
 		totalPill.createSpan({ text: "votes", cls: "habit-tracker-pill-label" });
+
+		// Twice Daily habits can rack up 2 occurrences on the same day, which
+		// "votes" (a day-with-any-completion count) can't reflect — only show
+		// this pill when it would actually say something votes doesn't.
+		if (stats.totalOccurrences !== stats.total) {
+			const occurrencesPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
+			occurrencesPill.createSpan({ text: "✅", cls: "habit-tracker-pill-icon" });
+			occurrencesPill.createSpan({ text: `${stats.totalOccurrences}`, cls: "habit-tracker-pill-value" });
+			occurrencesPill.createSpan({ text: "completions", cls: "habit-tracker-pill-label" });
+		}
 
 		const yearPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
 		yearPill.createSpan({ text: `${stats.totalThisYear}`, cls: "habit-tracker-pill-value" });
