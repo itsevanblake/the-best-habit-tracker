@@ -372,8 +372,24 @@ body.theme-dark {
 
 .habit-tracker-stats-row {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 6px;
 	flex-shrink: 0;
+}
+
+/* Edit/delete: deliberately its own flex item, sibling to
+   .habit-tracker-stats-row rather than nested inside it, so it never
+   competes with however many stat pills happen to be rendered for room.
+   flex-shrink:0 keeps it from ever being the thing that gets squeezed;
+   .habit-tracker-header's own flex-wrap means this whole cluster just
+   drops to its own line if the pills already filled the row, instead of
+   being clipped off the right edge. */
+.habit-tracker-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+	margin-left: auto;
 }
 
 .habit-tracker-pill {
@@ -591,6 +607,46 @@ body.theme-dark {
 	outline: 2px solid var(--habit-color, var(--text-accent));
 }
 
+/* Streak-at-risk: today isn't checked in yet, it's evening, and yesterday
+   was done — i.e. an active streak actually breaks at midnight if today
+   stays blank. A pulsing warning ring layered on top of (and visually
+   overriding) the plain today outline above, so the moment reads as
+   urgent rather than just "today's cell". Pure rendering state — never
+   written to entries, see isStreakAtRisk() in main.ts. */
+@keyframes habit-tracker-at-risk-pulse {
+	0%,
+	100% {
+		outline-color: var(--text-error, #ef4444);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-error, #ef4444) 55%, transparent);
+	}
+	50% {
+		outline-color: color-mix(in srgb, var(--text-error, #ef4444) 55%, transparent);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-error, #ef4444) 20%, transparent);
+	}
+}
+
+.habit-tracker-cell-at-risk {
+	outline: 2px solid var(--text-error, #ef4444);
+	animation: habit-tracker-at-risk-pulse 1.3s ease-in-out infinite;
+}
+
+/* week/month cells are boxed with their own border rather than an outline
+   ring — animate the border color itself there instead, same cadence. */
+.habit-tracker-week-cell.habit-tracker-cell-at-risk {
+	outline: none;
+	animation: habit-tracker-at-risk-pulse 1.3s ease-in-out infinite, habit-tracker-at-risk-border-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes habit-tracker-at-risk-border-pulse {
+	0%,
+	100% {
+		border-color: var(--text-error, #ef4444);
+	}
+	50% {
+		border-color: color-mix(in srgb, var(--text-error, #ef4444) 40%, var(--background-modifier-border));
+	}
+}
+
 /* The "reward" moment — a brief pop played on the exact cell just checked
    off, before the next full re-render replaces it. Shared across every
    grid style (year, year-days, week, month) since renderCell() drives all
@@ -637,6 +693,22 @@ body.theme-dark {
 	animation: habit-tracker-confetti 0.6s ease-out forwards;
 }
 
+/* Milestone hit (settings.milestones, see burstMilestoneConfetti() in
+   main.ts) — a bigger, longer burst that falls the full height of the
+   card rather than radiating from one cell, so it reads as a distinctly
+   bigger moment than the everyday per-check-in pop above. Reuses the same
+   translate/rotate/fade keyframe, just a longer duration + its own
+   per-piece delay so pieces don't all fall in lockstep. */
+.habit-tracker-confetti-piece-milestone {
+	width: 8px;
+	height: 8px;
+	border-radius: 2px;
+	animation-name: habit-tracker-confetti;
+	animation-duration: 1.3s;
+	animation-timing-function: ease-in;
+	animation-fill-mode: forwards;
+}
+
 .habit-tracker-cell-future {
 	background-color: transparent;
 	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
@@ -674,8 +746,42 @@ body.theme-dark {
 	filter: brightness(1.15);
 }
 
+/* renderCell() paints a checked day with the exact same
+   `cell.style.backgroundColor = habit.color` inline value here as it does
+   in Year view — verified byte-identical, no opacity/alpha is applied to
+   either. The washed-out look reported against Year view is the "small
+   color patch" perceptual effect: this grid renders a much bigger flat
+   field of a checked color's fixed 26x26 cell, all 365 days at once with
+   many more neutral-grey neighbors in view simultaneously (vs. Year's
+   grid-sized cells in a viewport auto-scrolled to hug today's column) — the
+   identical hex reads as less vivid at that size/density even though no
+   pixel value actually changed. A small, same-value saturation/brightness
+   nudge (not a color change) compensates so a checked day reads with the
+   same punch here as it does in Year view. Specificity-safe :hover variant
+   alongside it so hovering a checked cell still gets the ordinary
+   brightness bump instead of this rule silently winning the cascade tie. */
+.habit-tracker-yeardays-cell.habit-tracker-cell-done {
+	filter: saturate(1.3) brightness(1.05);
+}
+
+.habit-tracker-yeardays-cell.habit-tracker-cell-done:hover {
+	filter: saturate(1.3) brightness(1.2);
+}
+
 .habit-tracker-yeardays-cell .habit-tracker-cell-daynum {
 	font-size: 0.6em;
+}
+
+/* A past day with no entry — a clearly greyed-out fill (the full,
+   unmixed border color, not the ~65% tint every cell gets by default) so
+   a gap in the streak actually reads at a glance instead of blending into
+   the same shade as every other unmarked cell. Compound selectors (rather
+   than relying on declaration order against .habit-tracker-cell /
+   .habit-tracker-yeardays-cell) so this always wins regardless of where
+   it sits in the file. */
+.habit-tracker-cell.habit-tracker-cell-missed,
+.habit-tracker-yeardays-cell.habit-tracker-cell-missed {
+	background-color: var(--background-modifier-border);
 }
 
 /* Minimum/2-minute-rule version of a day — same color as a full
@@ -752,6 +858,14 @@ body.theme-dark {
 
 .habit-tracker-week-cell-future:hover {
 	border-color: var(--habit-color, var(--text-accent));
+}
+
+/* Same "past + no entry" greying as the year/year-days cells above, just
+   in the boxed week/month card shape. Compound selector for the same
+   specificity-safety reason as .habit-tracker-cell-missed above. */
+.habit-tracker-week-cell.habit-tracker-week-cell-missed {
+	background-color: var(--background-modifier-border);
+	border-color: transparent;
 }
 
 .habit-tracker-week-cell.habit-tracker-cell-blank {
@@ -1204,11 +1318,20 @@ body.theme-dark {
 
 	.habit-tracker-stats-row {
 		gap: 4px;
+		flex-wrap: wrap;
 	}
 
 	.habit-tracker-pill {
 		padding: 4px 8px;
 		font-size: 0.72em;
+	}
+
+	/* Edit/delete must never be the thing squeezed off-screen by however
+	   many stat pills are rendered — pin flex-shrink:0 explicitly at this
+	   width and let the pills (which wrap, above) absorb the crowding
+	   instead. */
+	.habit-tracker-actions {
+		flex-shrink: 0;
 	}
 
 	.habit-tracker-name {
@@ -1235,6 +1358,55 @@ body.theme-dark {
 	.habit-tracker-month-grid {
 		gap: 4px;
 	}
+
+	/* Obsidian's own CSS flips .setting-item from row to column layout at
+	   this width (label stacks above the field instead of beside it). The
+	   desktop-only fixed-width column rules above (~line 957-967) get
+	   reinterpreted along the new main axis when that happens — flex: 0 0
+	   130px becomes a 130px-tall empty box under each label instead of a
+	   130px-wide column beside it. Reset both back to auto sizing so the
+	   label wrapper and control just size to their content again. Kept as
+	   a fallback alongside the body.is-mobile rule below — a desktop
+	   window narrowed to this width benefits from it too, and it costs
+	   nothing on a phone where is-mobile already covers it. */
+	.habit-tracker-lever-setting .setting-item-info {
+		flex: 0 0 auto;
+		width: auto;
+	}
+}
+
+/* The mobile Obsidian app doesn't reliably set a viewport meta tag its
+   webview will honor for width-based @media queries, so a max-width
+   breakpoint alone can silently never match on-device even though the
+   layout is visibly phone-sized — confirmed by testing (the 480px rule
+   above didn't fix this in practice on an actual iPhone). body.is-mobile
+   is the class Obsidian itself adds when running as its mobile app,
+   independent of viewport-width quirks, so it's the reliable way to key
+   mobile-only overrides. !important because this has to win over
+   Obsidian's own core stylesheet's row→column flip for .setting-item,
+   whose load-order/specificity relative to a community plugin's CSS
+   isn't something we control. */
+body.is-mobile .habit-tracker-lever-setting .setting-item-info {
+	flex: 0 0 auto !important;
+	width: auto !important;
+	height: auto !important;
+}
+
+/* Same width-based-media-query unreliability as above applies to the
+   habit card's edit/delete buttons getting clipped off the right edge on
+   an iPhone (confirmed via screenshot: stat pills eat the full row width,
+   the pencil is half-visible at the edge, the trash can is entirely
+   off-screen and untappable). The @media (max-width: 480px) rules above
+   are kept as a desktop-narrow-window fallback, but body.is-mobile is the
+   one guaranteed to actually apply on-device. !important isn't needed
+   here (no competing Obsidian core rule to out-rank), just redundancy
+   against the same viewport-meta quirk. */
+body.is-mobile .habit-tracker-stats-row {
+	flex-wrap: wrap;
+}
+
+body.is-mobile .habit-tracker-actions {
+	flex-shrink: 0;
 }
 
 /* ---- Habit creation walkthrough ---- */
@@ -1375,4 +1547,115 @@ body.theme-dark {
 	.habit-tracker-walkthrough-tooltip {
 		width: min(340px, calc(100% - 16px));
 	}
+}
+
+/* ---- Kind (Habit vs Task) form toggling ---- */
+
+.habit-tracker-kind-hidden {
+	display: none !important;
+}
+
+/* Scheduled date is habit-only-hidden by default (Kind starts as "habit"),
+   the same toggle class as habit-only sections, just inverted by JS. */
+.habit-tracker-task-only.habit-tracker-kind-hidden {
+	display: none;
+}
+
+/* ---- One-off scheduled tasks ---- */
+
+.habit-tracker-task-row {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 12px 16px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ht-radius-xl);
+	background-color: var(--background-primary-alt, var(--background-secondary));
+	border-left: 4px solid var(--habit-color, var(--interactive-accent));
+}
+
+.habit-tracker-task-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.habit-tracker-task-row-overdue {
+	border-left-color: var(--text-error, #ef4444);
+}
+
+.habit-tracker-task-row-done {
+	opacity: 0.65;
+}
+
+.habit-tracker-task-checkbox {
+	width: 18px;
+	height: 18px;
+	flex-shrink: 0;
+	cursor: pointer;
+}
+
+.habit-tracker-task-name {
+	font-weight: 600;
+	flex-grow: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.habit-tracker-task-row-done .habit-tracker-task-name {
+	text-decoration: line-through;
+}
+
+.habit-tracker-task-date {
+	font-size: 0.85em;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.habit-tracker-task-row-overdue .habit-tracker-task-date {
+	color: var(--text-error, #ef4444);
+	font-weight: 600;
+}
+
+.habit-tracker-done-toggle {
+	cursor: pointer;
+	font-size: 0.9em;
+	color: var(--text-muted);
+	padding: 6px 2px;
+	user-select: none;
+}
+
+.habit-tracker-done-toggle:hover {
+	color: var(--text-normal);
+}
+
+.habit-tracker-done-section {
+	display: none;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 4px;
+}
+
+.habit-tracker-done-section-visible {
+	display: flex;
+}
+
+/* Check-in / last-call alarm banners (HabitTrackerPlugin.checkAlarm) —
+   styled to read as more urgent than the plain default Notice toast (e.g.
+   the milestone one above), since their whole job is to actually get
+   noticed. */
+.habit-tracker-alarm-notice {
+	border-left: 3px solid var(--text-error, #ef4444);
+	font-weight: 600;
+}
+
+/* Dismiss button inside a last-call alarm's Notice (HabitTrackerPlugin.
+   showLastCallNotice) — a small, secondary-looking button rather than the
+   bold mod-cta treatment, since dismissing is the "quiet" action next to
+   the alarm's own attention-grabbing text. */
+.habit-tracker-alarm-notice-dismiss {
+	margin-left: 10px;
+	font-weight: 500;
+	font-size: 0.85em;
 }

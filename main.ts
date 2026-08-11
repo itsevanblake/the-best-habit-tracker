@@ -1,13 +1,20 @@
-import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice } from "obsidian";
+import { Plugin, PluginSettingTab, MarkdownRenderChild, Modal, App, Setting, Notice, ItemView, WorkspaceLeaf } from "obsidian";
 import { createClient, SupabaseClient, Session, RealtimeChannel } from "@supabase/supabase-js";
 
 type HabitType = "build" | "break";
+// "habit" (default) is the existing recurring/streak item. "task" is a
+// one-off item scheduled for a specific date — no streak, no Four Laws
+// formula, just "show up on that date and check it off."
+type ItemKind = "habit" | "task";
 
 interface HabitDefinition {
 	id: string;
 	name: string;
 	color: string;
 	createdAt: string; // YYYY-MM-DD
+	kind?: ItemKind; // default "habit"
+	scheduledDate?: string; // YYYY-MM-DD — only for kind: "task". Hidden from the tracker until this date.
+	archived?: boolean; // only for kind: "task" — set automatically once checked off; collapses it into the "Done" section.
 	type?: HabitType; // default "build" — a "break" habit inverts the framing (Clear's four laws apply in reverse to quitting a habit), not the click mechanic: a checked day still means "I succeeded today" (i.e. "I resisted").
 	// The Complete Habit Formula — Clear's own four-part sentence structure,
 	// one field per Law of Behavior Change, 1:1:
@@ -19,6 +26,27 @@ interface HabitDefinition {
 	// Also part of Atomic Habits, but not part of the 4-law formula above.
 	identity?: string; // "I am someone who..." — identity-based habits: the vote this habit casts for who you're becoming.
 	linkedGoal?: string; // Note name of the Goals/Quarters file this habit is the "system" for.
+	// Per-habit check-in alarm (habit kind only — not meaningful for a
+	// one-off task). Once alarmTime passes local time with this habit not
+	// yet checked in today, HabitTrackerPlugin.checkAlarm() nags (sound +
+	// Notice) every alarmRepeatMinutes until it is. See PluginSettings.
+	// lastCallAlarms for the generic, non-habit-tied version.
+	alarmEnabled?: boolean;
+	alarmTime?: string; // "HH:MM", 24h, local time
+	alarmRepeatMinutes?: number; // default 10 if alarmEnabled but unset
+}
+
+// A generic, non-habit-tied nag — "last call" for whatever the name
+// describes (e.g. "Log off for the day"). Unlike a per-habit alarm there's
+// no data condition that auto-silences it, so it keeps repeating every
+// LAST_CALL_REPEAT_MINUTES until explicitly dismissed via the Notice's
+// Dismiss button — a dismissal that only lasts for that calendar day (see
+// HabitTrackerPlugin.checkAlarm()'s day-boundary reset).
+interface LastCallAlarm {
+	id: string;
+	name: string;
+	time: string; // "HH:MM", 24h, local time
+	enabled: boolean;
 }
 
 // A day can be a full completion (true) or the minimum/2-minute-rule
@@ -41,9 +69,35 @@ interface PluginSettings {
 	// Local-only (not synced via Supabase) since sound/confetti is a
 	// per-device preference, not habit data.
 	celebrationEffectsEnabled: boolean;
+	// Day-streak thresholds that trigger a celebration (maybeCelebrate()) and
+	// drive each habit's "days to next milestone" bubble. User-editable via
+	// the settings tab's Milestones section. Order doesn't matter for
+	// storage — read sites sort a copy (see HabitTrackerPlugin.sortedMilestones()).
+	milestones: number[];
+	// Generic "last call" nags — not tied to any specific habit. See the
+	// LastCallAlarm doc comment above. This settings block (plus each
+	// habit's own alarmEnabled/alarmTime/alarmRepeatMinutes fields) is what
+	// the external ~/.second-brain-cron/habit-alarm.sh fallback reads
+	// straight out of data.json via jq, so the two halves (in-app +
+	// closed-Obsidian) share one source of truth instead of drifting.
+	lastCallAlarms: LastCallAlarm[];
 }
 
-const DEFAULT_SETTINGS: PluginSettings = { supabaseUrl: "", supabaseAnonKey: "", celebrationEffectsEnabled: true };
+const DEFAULT_MILESTONES = [7, 30, 60, 100, 150, 200, 250, 300, 365];
+
+// Fixed repeat interval for last-call alarms (see LastCallAlarm) — unlike
+// per-habit alarms these don't expose their own configurable repeat, since
+// they're meant to be a short, insistent nag until dismissed rather than a
+// tunable per-item setting.
+const LAST_CALL_REPEAT_MINUTES = 10;
+
+const DEFAULT_SETTINGS: PluginSettings = {
+	supabaseUrl: "",
+	supabaseAnonKey: "",
+	celebrationEffectsEnabled: true,
+	milestones: DEFAULT_MILESTONES,
+	lastCallAlarms: [],
+};
 
 // A cohesive, vibrant set (consistent saturation/lightness rather than a
 // mixed bag of muddy and bright tones) that reads well in both light and
@@ -128,10 +182,28 @@ function burstConfetti(card: HTMLElement, originEl: HTMLElement, habitColor: str
 	}
 }
 
-// Streak milestones — both the Notice+pill-flash celebration in
-// maybeCelebrate() and the "crazy nice" sound variant below key off this
-// same list, so the two stay in sync.
-const MILESTONES = [7, 30, 60, 100, 365];
+// A bigger, longer-falling confetti burst reserved for milestone hits
+// (settings.milestones, see maybeCelebrate() below) — visually distinct
+// from the small per-check-in pop burstConfetti() plays on every ordinary
+// day, so crossing a milestone actually reads as a bigger moment. Falls
+// from the top of the card rather than radiating from a single cell, since
+// maybeCelebrate() runs after the DOM has already been rebuilt and no
+// longer has a reference to the exact cell that was clicked.
+function burstMilestoneConfetti(card: HTMLElement, habitColor: string) {
+	const cardRect = card.getBoundingClientRect();
+	const colors = [habitColor, "#ffd166", "#06d6a0", "#ef476f", "#118ab2", "#a855f7"];
+	for (let i = 0; i < 36; i++) {
+		const piece = card.createDiv({ cls: "habit-tracker-confetti-piece habit-tracker-confetti-piece-milestone" });
+		piece.style.left = `${Math.random() * cardRect.width}px`;
+		piece.style.top = "-10px";
+		piece.style.setProperty("--tx", `${(Math.random() - 0.5) * 140}px`);
+		piece.style.setProperty("--ty", `${cardRect.height + 60}px`);
+		piece.style.setProperty("--rot", `${360 + Math.random() * 720}deg`);
+		piece.style.backgroundColor = colors[i % colors.length];
+		piece.style.animationDelay = `${Math.random() * 0.35}s`;
+		window.setTimeout(() => piece.remove(), 1700);
+	}
+}
 
 // One synthesized note via the Web Audio API — the shared building block
 // for both the daily chime and the milestone fanfare below.
@@ -159,8 +231,8 @@ function playTone(ctx: AudioContext, freq: number, start: number, duration: numb
 // keeps climbing "sexier" all week without ever fully maxing out into
 // something unpleasant.
 //
-// Milestone days (7/30/60/100/365, shared with maybeCelebrate()): a bigger
-// "crazy nice" fanfare — an ascending run into a full bright chord —
+// Milestone days (settings.milestones, shared with maybeCelebrate()): a
+// bigger "crazy nice" fanfare — an ascending run into a full bright chord —
 // instead of the plain daily chime.
 function playCelebrationChime(streak: number, isMilestone: boolean) {
 	try {
@@ -203,6 +275,32 @@ function playCelebrationChime(streak: number, isMilestone: boolean) {
 	}
 }
 
+// The check-in alarm's sound — deliberately more urgent/insistent than the
+// daily celebration chime above: a fast alternating two-tone "buzzer",
+// repeated a few times, closer to an alarm clock going off than a pleasant
+// confirmation ding. Same synthesis approach (Web Audio, no bundled asset)
+// and same fail-silent behavior if audio is unavailable — the Notice banner
+// still carries the moment on its own.
+function playAlarmChime() {
+	try {
+		const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+		const ctx = new AudioCtx();
+		const now = ctx.currentTime;
+		const highFreq = 880; // A5
+		const lowFreq = 659.25; // E5
+		const beepDuration = 0.14;
+		const beepGap = 0.18;
+		for (let i = 0; i < 4; i++) {
+			const pairStart = now + i * beepGap * 2;
+			playTone(ctx, highFreq, pairStart, beepDuration, 0.18);
+			playTone(ctx, lowFreq, pairStart + beepGap, beepDuration, 0.18);
+		}
+		window.setTimeout(() => ctx.close(), 1800);
+	} catch {
+		// Web Audio unsupported/blocked — the Notice banner still shows.
+	}
+}
+
 // Grows a textarea's height to fit its content instead of leaving it a
 // fixed number of rows — reset to "auto" first so it can shrink back down
 // too (e.g. after deleting text), not just grow.
@@ -215,17 +313,28 @@ interface Stats {
 	streak: number;
 	bestStreak: number;
 	total: number;
+	totalThisWeek: number;
+	totalThisMonth: number;
 	totalThisYear: number;
 }
 
 function computeStats(entries: Record<string, EntryValue>): Stats {
 	let total = 0;
+	let totalThisWeek = 0;
+	let totalThisMonth = 0;
 	let totalThisYear = 0;
-	const currentYear = "" + new Date().getFullYear();
+	const now = new Date();
+	const currentYear = "" + now.getFullYear();
+	const currentYearMonth = currentYear + "-" + pad(now.getMonth() + 1);
+	// Sunday-Saturday, matching the Week view's own definition of "this week".
+	const weekStart = formatDate(addDays(now, -now.getDay()));
+	const weekEnd = formatDate(addDays(now, 6 - now.getDay()));
 	for (const date in entries) {
 		if (entries[date]) {
 			total++;
 			if (date.startsWith(currentYear)) totalThisYear++;
+			if (date.startsWith(currentYearMonth)) totalThisMonth++;
+			if (date >= weekStart && date <= weekEnd) totalThisWeek++;
 		}
 	}
 
@@ -249,7 +358,7 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 		cursor = addDays(cursor, -1);
 	}
 
-	return { streak, bestStreak: computeBestStreak(entries), total, totalThisYear };
+	return { streak, bestStreak: computeBestStreak(entries), total, totalThisWeek, totalThisMonth, totalThisYear };
 }
 
 // Longest streak ever achieved (same forgiving one-gap rule as the current
@@ -279,6 +388,23 @@ function computeBestStreak(entries: Record<string, EntryValue>): number {
 	return best;
 }
 
+// Evening cutoff (local time) after which an unmarked today starts reading
+// as "at risk" rather than just "not done yet" — see isStreakAtRisk() below.
+const AT_RISK_HOUR = 18;
+
+// Purely a rendering signal (never touches stored data): true once it's
+// evening, today isn't checked in yet, and yesterday was — i.e. there's an
+// active streak that will actually break at midnight if today stays blank.
+// A habit with no streak yet (yesterday blank) has nothing to protect, so
+// it doesn't get the at-risk treatment.
+function isStreakAtRisk(entries: Record<string, EntryValue>): boolean {
+	if (new Date().getHours() < AT_RISK_HOUR) return false;
+	const today = todayStr();
+	if (entries[today]) return false;
+	const yesterday = formatDate(addDays(new Date(), -1));
+	return !!entries[yesterday];
+}
+
 // Toggles a day's state: empty -> full -> empty. A day previously marked
 // "min" (the old three-state minimum-version cycle) still clears back to
 // empty on the next click, same as "full" — it just can't be newly created
@@ -304,6 +430,11 @@ interface HabitFormValues extends HabitLevers {
 	name: string;
 	color: string;
 	type: HabitType;
+	kind: ItemKind;
+	scheduledDate: string;
+	alarmEnabled: boolean;
+	alarmTime: string;
+	alarmRepeatMinutes: number;
 }
 
 // The Complete Habit Formula fields, matching the Four Laws 1:1.
@@ -443,20 +574,29 @@ interface HabitFormOptions {
 }
 
 interface WalkthroughStep {
-	title: string;
+	title: string | (() => string);
 	body: string | (() => string);
 	target: HTMLElement;
 	focusEl?: HTMLElement;
+	// Evaluated fresh each time this step is about to show — lets a step
+	// apply only to Habit or only to Task (e.g. Build/Break vs Scheduled
+	// Date) without needing to rebuild the whole steps array once Kind is
+	// picked partway through the tour.
+	skipIf?: () => boolean;
 }
 
 interface WalkthroughRefs {
 	nameSetting: Setting;
 	nameInputEl: HTMLInputElement;
+	kindSetting: Setting;
+	kindSelectEl: HTMLSelectElement;
 	leverElements: Partial<Record<keyof HabitLevers, { setting: Setting; textareaEl: HTMLTextAreaElement }>>;
 	colorSetting: Setting;
 	swatchRow: HTMLElement;
 	typeSetting: Setting;
 	typeSelectEl: HTMLSelectElement;
+	scheduledDateSetting: Setting;
+	scheduledDateInputEl: HTMLInputElement;
 	commitCheckboxEl?: HTMLInputElement;
 	footer: HTMLElement;
 	submitBtn: HTMLButtonElement;
@@ -480,6 +620,11 @@ class HabitFormModal extends Modal {
 			name: opts.initial?.name ?? "",
 			color: opts.initial?.color ?? PALETTE[0],
 			type: opts.initial?.type ?? "build",
+			kind: opts.initial?.kind ?? "habit",
+			scheduledDate: opts.initial?.scheduledDate ?? "",
+			alarmEnabled: opts.initial?.alarmEnabled ?? false,
+			alarmTime: opts.initial?.alarmTime ?? "20:00",
+			alarmRepeatMinutes: opts.initial?.alarmRepeatMinutes ?? 10,
 			stackedAfter: opts.initial?.stackedAfter ?? "",
 			craving: opts.initial?.craving ?? "",
 			minimumVersion: opts.initial?.minimumVersion ?? "",
@@ -494,9 +639,17 @@ class HabitFormModal extends Modal {
 		contentEl.addClass("habit-tracker-modal");
 		contentEl.createEl("h3", { text: this.opts.title });
 
+		// Habit-only sections (Identity & Context, Type, Complete Habit
+		// Formula, commit checkbox, walkthrough entry point) get hidden
+		// entirely for a one-off task — none of the streak/Four-Laws
+		// machinery applies to something you do once on a scheduled date.
+		// Populated below as each section is built, then toggled together
+		// whenever Kind changes.
+		const habitOnlySections: HTMLElement[] = [];
+
 		if (!this.opts.walkthrough) {
 			const walkthroughBtn = contentEl.createEl("button", {
-				text: "🎓 Habit Creation Walkthrough",
+				text: "🎓 Creation Walkthrough",
 				cls: "habit-tracker-walkthrough-btn habit-tracker-modal-walkthrough-btn",
 			});
 			walkthroughBtn.type = "button";
@@ -537,14 +690,43 @@ class HabitFormModal extends Modal {
 			advanceOnEnter(text.inputEl);
 		});
 
+		let scheduledDateInputEl: HTMLInputElement;
+		const scheduledDateSetting = new Setting(contentEl).setName("Scheduled date").addText((text) => {
+			scheduledDateInputEl = text.inputEl;
+			text.inputEl.type = "date";
+			text.setValue(this.values.scheduledDate).onChange((v) => {
+				this.values.scheduledDate = v;
+			});
+		});
+		scheduledDateSetting.settingEl.addClass("habit-tracker-task-only");
+
+		const applyKindVisibility = () => {
+			const isTask = this.values.kind === "task";
+			habitOnlySections.forEach((el) => el.toggleClass("habit-tracker-kind-hidden", isTask));
+			scheduledDateSetting.settingEl.toggleClass("habit-tracker-kind-hidden", !isTask);
+		};
+
+		let kindSelectEl: HTMLSelectElement;
+		const kindSetting = new Setting(contentEl).setName("Kind").addDropdown((dd) => {
+			kindSelectEl = dd.selectEl;
+			dd.addOption("habit", "Habit (recurring)");
+			dd.addOption("task", "Task (one-off, scheduled)");
+			dd.setValue(this.values.kind);
+			dd.onChange((v) => {
+				this.values.kind = v as ItemKind;
+				applyKindVisibility();
+				this.updateCommitLabel();
+			});
+		});
+
 		// A reusable row: label (fixed, not part of any editable control —
 		// can't be typed into or deleted) + auto-growing textarea (native
 		// placeholder clears itself the instant that specific field is
 		// typed into) + "?" help toggle.
 		const leverElements: Partial<Record<keyof HabitLevers, { setting: Setting; textareaEl: HTMLTextAreaElement }>> = {};
-		const renderLeverRow = (key: keyof HabitLevers) => {
+		const renderLeverRow = (key: keyof HabitLevers, container: HTMLElement = contentEl) => {
 			let textareaEl: HTMLTextAreaElement;
-			const setting = new Setting(contentEl).setName(LEVER_LABELS[key]).addTextArea((text) => {
+			const setting = new Setting(container).setName(LEVER_LABELS[key]).addTextArea((text) => {
 				textareaEl = text.inputEl;
 				if (this.isNew) text.setPlaceholder(EXAMPLE_LEVERS[key]);
 				text.setValue(this.values[key]).onChange((v) => {
@@ -559,15 +741,16 @@ class HabitFormModal extends Modal {
 			setting.settingEl.addClass("habit-tracker-lever-setting");
 			leverElements[key] = { setting, textareaEl: textareaEl! };
 			const info = LEVER_TERM_INFO[key];
-			addHelpToggle(setting, contentEl, info.term, info.definition, EXAMPLE_LEVERS[key]);
+			addHelpToggle(setting, container, info.term, info.definition, EXAMPLE_LEVERS[key]);
 		};
 
-		contentEl.createEl("h4", { text: "Identity & Context" });
-		contentEl.createEl("p", {
+		const identityWrap = contentEl.createDiv();
+		identityWrap.createEl("h4", { text: "Identity & Context" });
+		identityWrap.createEl("p", {
 			cls: "setting-item-description",
 			text: "What identity is the evidence for, the cue's specifics, and what it's actually for.",
 		});
-		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key);
+		for (const key of OTHER_LEVER_KEYS) renderLeverRow(key, identityWrap);
 
 		const colorSetting = new Setting(contentEl).setName("Color");
 		const swatchRow = contentEl.createDiv({ cls: "habit-tracker-swatch-row" });
@@ -631,8 +814,10 @@ class HabitFormModal extends Modal {
 		PALETTE.forEach((c) => renderSwatch(c, false));
 		this.plugin.data.customColors.forEach((c) => renderSwatch(c, true));
 
+		const typeWrap = contentEl.createDiv();
+		habitOnlySections.push(typeWrap);
 		let typeSelectEl: HTMLSelectElement;
-		const typeSetting = new Setting(contentEl).setName("Type").addDropdown((dd) => {
+		const typeSetting = new Setting(typeWrap).setName("Type").addDropdown((dd) => {
 			typeSelectEl = dd.selectEl;
 			dd.addOption("build", "Build (start a habit)");
 			dd.addOption("break", "Break (quit a habit)");
@@ -642,20 +827,60 @@ class HabitFormModal extends Modal {
 				this.updateCommitLabel();
 			});
 		});
-		addHelpToggle(typeSetting, contentEl, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
+		addHelpToggle(typeSetting, typeWrap, TYPE_INFO.term, TYPE_INFO.definition, "Quitting smoking = Break. Morning meditation = Build.");
 
-		contentEl.createEl("h4", { text: "The Complete Habit Formula" });
-		contentEl.createEl("p", {
+		// Per-habit check-in alarm — habit-only (hidden for a task, same as
+		// Type above), since the firing condition is "not checked in today,"
+		// which isn't meaningful for a one-off scheduled item.
+		const alarmWrap = contentEl.createDiv();
+		habitOnlySections.push(alarmWrap);
+		alarmWrap.createEl("h4", { text: "Check-in Alarm" });
+		alarmWrap.createEl("p", {
+			cls: "setting-item-description",
+			text: "Once the alarm time passes local time with this habit not yet checked in today, nag (sound + banner) every few minutes until it is.",
+		});
+		new Setting(alarmWrap).setName("Enable alarm").addToggle((toggle) =>
+			toggle.setValue(this.values.alarmEnabled).onChange((value) => {
+				this.values.alarmEnabled = value;
+			})
+		);
+		new Setting(alarmWrap)
+			.setName("Alarm time")
+			.setDesc("24-hour local time (HH:MM).")
+			.addText((text) => {
+				text.inputEl.type = "time";
+				text.setValue(this.values.alarmTime).onChange((value) => {
+					// A native time input only ever emits valid HH:MM (or
+					// empty while mid-edit) — ignore anything else rather
+					// than storing a half-typed value.
+					if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return;
+					this.values.alarmTime = value;
+				});
+			});
+		new Setting(alarmWrap)
+			.setName("Repeat every (minutes)")
+			.setDesc("How often to re-nag once the alarm time has passed and it's still not checked in.")
+			.addText((text) =>
+				text.setValue("" + this.values.alarmRepeatMinutes).onChange((value) => {
+					const n = parseInt(value, 10);
+					if (!Number.isFinite(n) || n <= 0) return;
+					this.values.alarmRepeatMinutes = n;
+				})
+			);
+
+		const formulaWrap = contentEl.createDiv();
+		formulaWrap.createEl("h4", { text: "The Complete Habit Formula" });
+		formulaWrap.createEl("p", {
 			cls: "setting-item-description",
 			text: 'Clear\'s own structure, one field per Law: "After I [Trigger], I will [Routine]. [Craving]. Once done, [Reward]."',
 		});
 
 		// Toggleable panel mapping each field to its specific Law.
-		const fourLawsToggle = contentEl.createDiv({
+		const fourLawsToggle = formulaWrap.createDiv({
 			cls: "habit-tracker-fourlaws-toggle",
 			text: "📖 How this maps to the 4 Laws of Behavior Change",
 		});
-		const fourLawsBox = contentEl.createDiv({ cls: "habit-tracker-fourlaws-box" });
+		const fourLawsBox = formulaWrap.createDiv({ cls: "habit-tracker-fourlaws-box" });
 		for (const item of FOUR_LAWS) {
 			const row = fourLawsBox.createDiv({ cls: "habit-tracker-fourlaws-row" });
 			const heading = row.createDiv({ cls: "habit-tracker-fourlaws-heading" });
@@ -668,13 +893,14 @@ class HabitFormModal extends Modal {
 			fourLawsBox.toggleClass("habit-tracker-fourlaws-box-visible", !fourLawsBox.hasClass("habit-tracker-fourlaws-box-visible"));
 		};
 
-		for (const key of FORMULA_KEYS) renderLeverRow(key);
+		for (const key of FORMULA_KEYS) renderLeverRow(key, formulaWrap);
 
 		let commitCheckboxEl: HTMLInputElement | undefined;
 		if (this.isNew) {
+			const commitWrap = contentEl.createDiv();
 			// Wrapping the checkbox and text in a single <label> makes the
 			// whole row clickable, not just the small checkbox itself.
-			const commitRow = contentEl.createEl("label", { cls: "habit-tracker-commit-row" });
+			const commitRow = commitWrap.createEl("label", { cls: "habit-tracker-commit-row" });
 			const commitCheckbox = commitRow.createEl("input", { cls: "habit-tracker-commit-checkbox" });
 			commitCheckboxEl = commitCheckbox;
 			commitCheckbox.type = "checkbox";
@@ -692,7 +918,24 @@ class HabitFormModal extends Modal {
 		submitBtn.onclick = () => this.submit();
 		focusOrder.push(submitBtn);
 
-		this.walkthroughRefs = { nameSetting, nameInputEl, leverElements, colorSetting, swatchRow, typeSetting, typeSelectEl, commitCheckboxEl, footer, submitBtn };
+		applyKindVisibility();
+
+		this.walkthroughRefs = {
+			nameSetting,
+			nameInputEl,
+			kindSetting,
+			kindSelectEl,
+			leverElements,
+			colorSetting,
+			swatchRow,
+			typeSetting,
+			typeSelectEl,
+			scheduledDateSetting,
+			scheduledDateInputEl,
+			commitCheckboxEl,
+			footer,
+			submitBtn,
+		};
 		if (this.opts.walkthrough) this.startWalkthrough(contentEl, this.walkthroughRefs);
 
 		window.setTimeout(() => nameInputEl?.focus(), 0);
@@ -707,57 +950,81 @@ class HabitFormModal extends Modal {
 	// color, choosing Build/Break, checking the commit box).
 	startWalkthrough(contentEl: HTMLElement, refs: WalkthroughRefs, restartBtn?: HTMLElement) {
 		const lever = (key: keyof HabitLevers) => refs.leverElements[key]!;
+		const isTask = () => this.values.kind === "task";
 		const steps: WalkthroughStep[] = [
 			{
-				title: "1. Name it",
-				body: 'Let\'s build your first habit together. Start by giving it a short, concrete name — something you\'d recognize at a glance, like "Morning run".',
+				title: "Name it",
+				body: 'Let\'s build this together. Start by giving it a short, concrete name — something you\'d recognize at a glance, like "Morning run" or "Book the dentist".',
 				target: refs.nameSetting.settingEl,
 				focusEl: refs.nameInputEl,
 			},
 			{
-				title: `2. ${LEVER_TERM_INFO.identity.term}`,
+				title: "Habit or Task?",
+				body: "Is this something you'll do repeatedly (a Habit), or is this something you'll do once on a specific date (a Task)? Pick whichever fits.",
+				target: refs.kindSetting.settingEl,
+				focusEl: refs.kindSelectEl,
+			},
+			{
+				title: LEVER_TERM_INFO.identity.term,
 				body: `This isn't just about the outcome — it's a vote for who you're becoming. Every time you follow through, you're proving something to yourself. Who are you becoming by doing this? Example: "${EXAMPLE_LEVERS.identity}"`,
 				target: lever("identity").setting.settingEl,
 				focusEl: lever("identity").textareaEl,
 			},
 			{
-				title: `3. ${LEVER_TERM_INFO.linkedGoal.term}`,
-				body: `You don't rise to the level of your goals — you fall to the level of your systems. This habit is your system; what goal is it actually serving for you? Example: "${EXAMPLE_LEVERS.linkedGoal}"`,
+				title: LEVER_TERM_INFO.linkedGoal.term,
+				body: () =>
+					isTask()
+						? `You don't rise to the level of your goals — you fall to the level of your systems. This task is one rep of that system; what goal is it actually serving for you? Example: "${EXAMPLE_LEVERS.linkedGoal}"`
+						: `You don't rise to the level of your goals — you fall to the level of your systems. This habit is your system; what goal is it actually serving for you? Example: "${EXAMPLE_LEVERS.linkedGoal}"`,
 				target: lever("linkedGoal").setting.settingEl,
 				focusEl: lever("linkedGoal").textareaEl,
 			},
 			{
-				title: "4. Pick a color",
-				body: "Give your habit a color so you can spot it at a glance. Click a preset color, or pick and save your own from the wheel.",
+				title: "Pick a color",
+				body: "Give it a color so you can spot it at a glance. Click a preset color, or pick and save your own from the wheel.",
 				target: refs.swatchRow,
 			},
 			{
-				title: `5. ${TYPE_INFO.term}`,
+				title: TYPE_INFO.term,
 				body: "Are you starting this habit, or trying to quit one? Pick Build if you're starting it, or Break if you're trying to quit it — the same Four Laws apply, just reversed for breaking a habit.",
 				target: refs.typeSetting.settingEl,
 				focusEl: refs.typeSelectEl,
+				skipIf: isTask,
 			},
 			{
-				title: `6. ${LEVER_TERM_INFO.stackedAfter.term}`,
-				body: `What will remind you to do this? Anchor it to something you already do without thinking, so the cue is impossible for you to miss. Example: "${EXAMPLE_LEVERS.stackedAfter}"`,
+				title: "Scheduled date",
+				body: 'When are you doing this? Pick the exact date — it\'ll stay out of the way until then, and show up ready to check off. Naming a specific day, not just "someday," is what actually gets one-off tasks done.',
+				target: refs.scheduledDateSetting.settingEl,
+				focusEl: refs.scheduledDateInputEl,
+				skipIf: () => !isTask(),
+			},
+			{
+				title: LEVER_TERM_INFO.stackedAfter.term,
+				body: () =>
+					isTask()
+						? `When and where will you actually do this? Naming the exact moment — not just "sometime that day" — is what actually gets a one-off task done. Example: "${EXAMPLE_LEVERS.stackedAfter}"`
+						: `What will remind you to do this? Anchor it to something you already do without thinking, so the cue is impossible for you to miss. Example: "${EXAMPLE_LEVERS.stackedAfter}"`,
 				target: lever("stackedAfter").setting.settingEl,
 				focusEl: lever("stackedAfter").textareaEl,
 			},
 			{
-				title: `7. ${LEVER_TERM_INFO.craving.term}`,
+				title: LEVER_TERM_INFO.craving.term,
 				body: `What makes you actually want to do this? Tie it to something you already crave, so that craving pulls you in. Example: "${EXAMPLE_LEVERS.craving}"`,
 				target: lever("craving").setting.settingEl,
 				focusEl: lever("craving").textareaEl,
 			},
 			{
-				title: `8. ${LEVER_TERM_INFO.minimumVersion.term}`,
+				title: LEVER_TERM_INFO.minimumVersion.term,
 				body: `Now scale it down for yourself. What's the two-minute version you could do even on your worst day? Optimize for showing up, not for going hard. Example: "${EXAMPLE_LEVERS.minimumVersion}"`,
 				target: lever("minimumVersion").setting.settingEl,
 				focusEl: lever("minimumVersion").textareaEl,
 			},
 			{
-				title: `9. ${LEVER_TERM_INFO.reward.term}`,
-				body: `How will you know you're done, right away? Give yourself an immediate payoff — that's what will make you want to repeat this tomorrow. Example: "${EXAMPLE_LEVERS.reward}"`,
+				title: LEVER_TERM_INFO.reward.term,
+				body: () =>
+					isTask()
+						? `How will you know you're done, right away? Give yourself an immediate payoff the moment you check it off. Example: "${EXAMPLE_LEVERS.reward}"`
+						: `How will you know you're done, right away? Give yourself an immediate payoff — that's what will make you want to repeat this tomorrow. Example: "${EXAMPLE_LEVERS.reward}"`,
 				target: lever("reward").setting.settingEl,
 				focusEl: lever("reward").textareaEl,
 			},
@@ -765,10 +1032,11 @@ class HabitFormModal extends Modal {
 
 		if (refs.commitCheckboxEl) {
 			steps.push({
-				title: "10. Commit",
+				title: "Commit",
 				body: () => {
-					const verb = this.values.type === "break" ? "breaking" : "building";
-					return `Ready to commit? Check the box below to say "I commit to ${verb} this habit" — a small, deliberate act that locks in your intention before you start.`;
+					const verb = isTask() ? "completing" : this.values.type === "break" ? "breaking" : "building";
+					const subject = isTask() ? "this task" : "this habit";
+					return `Ready to commit? Check the box below to say "I commit to ${verb} ${subject}" — a small, deliberate act that locks in your intention before you start.`;
 				},
 				target: (refs.commitCheckboxEl.closest("label") as HTMLElement) ?? refs.commitCheckboxEl,
 				focusEl: refs.commitCheckboxEl,
@@ -776,8 +1044,11 @@ class HabitFormModal extends Modal {
 		}
 
 		steps.push({
-			title: `${steps.length + 1}. Add the habit`,
-			body: "You've just built your whole system. Click below to add your first habit and start your streak.",
+			title: () => (isTask() ? "Add the task" : "Add the habit"),
+			body: () =>
+				isTask()
+					? "You've just built full accountability into this one-off. Click below to add your task — it'll stay out of sight until its date, then show up ready to check off."
+					: "You've just built your whole system. Click below to add your first habit and start your streak.",
 			target: refs.footer,
 			focusEl: refs.submitBtn,
 		});
@@ -838,18 +1109,25 @@ class HabitFormModal extends Modal {
 			restartBtn?.removeClass("habit-tracker-modal-walkthrough-btn-hidden");
 		};
 
-		const showStep = (i: number) => {
+		// direction controls which way to keep looking when landing on a
+		// skipped step (e.g. Type is skipped for a Task, Scheduled Date is
+		// skipped for a Habit) — Next skips forward, Back skips backward, so
+		// neither button ever gets stuck bouncing on a step that doesn't
+		// apply to the current Kind.
+		const showStep = (i: number, direction: 1 | -1 = 1) => {
 			if (!active) return;
+			while (i >= 0 && i < steps.length && steps[i].skipIf?.()) i += direction;
 			if (i >= steps.length) {
 				endWalkthrough();
 				return;
 			}
-			stepIndex = Math.max(0, i);
+			if (i < 0) return;
+			stepIndex = i;
 			const step = steps[stepIndex];
 			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
 			step.target.addClass("habit-tracker-walkthrough-highlight");
 			progressEl.setText(`Step ${stepIndex + 1} of ${steps.length}`);
-			titleEl.setText(step.title);
+			titleEl.setText(typeof step.title === "function" ? step.title() : step.title);
 			bodyEl.setText(typeof step.body === "function" ? step.body() : step.body);
 			backBtn.style.visibility = stepIndex === 0 ? "hidden" : "visible";
 			nextBtn.setText(stepIndex === steps.length - 1 ? "Got it" : "Next");
@@ -874,11 +1152,11 @@ class HabitFormModal extends Modal {
 		};
 		backBtn.onclick = (e) => {
 			e.stopPropagation();
-			showStep(stepIndex - 1);
+			showStep(stepIndex - 1, -1);
 		};
 		nextBtn.onclick = (e) => {
 			e.stopPropagation();
-			showStep(stepIndex + 1);
+			showStep(stepIndex + 1, 1);
 		};
 
 		// Following along by typing/clicking/pressing Enter in the actual
@@ -922,6 +1200,11 @@ class HabitFormModal extends Modal {
 			"change",
 			steps.findIndex((s) => s.focusEl === refs.typeSelectEl)
 		);
+		bindAdvance(
+			refs.kindSelectEl,
+			"change",
+			steps.findIndex((s) => s.focusEl === refs.kindSelectEl)
+		);
 		if (refs.commitCheckboxEl) {
 			const commitEl = refs.commitCheckboxEl;
 			bindAdvance(
@@ -942,25 +1225,35 @@ class HabitFormModal extends Modal {
 
 	updateCommitLabel() {
 		if (!this.commitLabelTextEl) return;
+		if (this.values.kind === "task") {
+			this.commitLabelTextEl.setText("I commit to completing this task");
+			return;
+		}
 		const verb = this.values.type === "break" ? "breaking" : "building";
 		this.commitLabelTextEl.setText(`I commit to ${verb} this habit`);
 	}
 
 	submit() {
 		if (!this.values.name.trim()) {
-			new Notice("Habit needs a name.");
+			new Notice(this.values.kind === "task" ? "Task needs a name." : "Habit needs a name.");
+			return;
+		}
+		const isTask = this.values.kind === "task";
+		if (isTask && !this.values.scheduledDate) {
+			new Notice("Pick a scheduled date for this task.");
 			return;
 		}
 		if (this.isNew) {
-			const verb = this.values.type === "break" ? "breaking" : "building";
+			const verb = isTask ? "completing" : this.values.type === "break" ? "breaking" : "building";
+			const subject = isTask ? "this task" : "this habit";
 			for (const key of [...FORMULA_KEYS, ...OTHER_LEVER_KEYS]) {
 				if (!this.values[key].trim()) {
-					new Notice(`Fill out "${LEVER_LABELS[key]}" — ${LEVER_HELP_REASON[key]}, which will help you with ${verb} this habit.`);
+					new Notice(`Fill out "${LEVER_LABELS[key]}" — ${LEVER_HELP_REASON[key]}, which will help you with ${verb} ${subject}.`);
 					return;
 				}
 			}
 			if (!this.commitChecked) {
-				new Notice(`Check "I commit to ${verb} this habit" to continue.`);
+				new Notice(`Check "I commit to ${verb} ${subject}" to continue.`);
 				return;
 			}
 		}
@@ -987,14 +1280,19 @@ class HabitFormModal extends Modal {
 	// before handing the user back to the tracker.
 	showCongrats(habitName: string) {
 		const { contentEl } = this;
+		const isTask = this.values.kind === "task";
 		contentEl.empty();
 		contentEl.addClass("habit-tracker-walkthrough-congrats");
-		contentEl.createEl("h3", { text: "🎉 You just built your first habit!" });
+		contentEl.createEl("h3", { text: isTask ? "🎉 You just built full accountability into a task!" : "🎉 You just built your first habit!" });
 		contentEl.createEl("p", {
-			text: `"${habitName}" is live, and you've filled in the whole loop for it — the trigger, the craving, the routine, and the reward.`,
+			text: isTask
+				? `"${habitName}" is scheduled for ${this.values.scheduledDate}, and you've filled in the whole loop for it — the trigger, the craving, the routine, and the reward.`
+				: `"${habitName}" is live, and you've filled in the whole loop for it — the trigger, the craving, the routine, and the reward.`,
 		});
 		contentEl.createEl("p", {
-			text: "The only thing left is showing up. Keep coming back to the daily tracker, check it off, and protect your streak — small, consistent reps are what actually compound into the person you're becoming.",
+			text: isTask
+				? "It'll stay out of the way until its date, then show up ready to check off — you've already named exactly when, why, and how you'll follow through."
+				: "The only thing left is showing up. Keep coming back to the daily tracker, check it off, and protect your streak — small, consistent reps are what actually compound into the person you're becoming.",
 		});
 		const doneBtn = contentEl.createEl("button", { text: "Let's go", cls: "mod-cta" });
 		doneBtn.type = "button";
@@ -1086,6 +1384,20 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 					})
 			);
 
+		containerEl.createEl("h2", { text: "Milestones" });
+		containerEl.createEl("p", {
+			text: "Day-streak thresholds that trigger a celebration (confetti + sound) and drive each habit's \"days to next milestone\" bubble.",
+			cls: "setting-item-description",
+		});
+		this.renderMilestonesSection(containerEl);
+
+		containerEl.createEl("h2", { text: "Last Call Alarms" });
+		containerEl.createEl("p", {
+			text: 'Generic nags not tied to any specific habit (e.g. "Log off for the day"). Once the alarm time passes local time, nags (sound + banner) every few minutes until dismissed — dismissing lasts only for that calendar day. Per-habit alarms live in each habit\'s own edit form (✏️ in its stats row) instead. Both are also read by an external script (~/.second-brain-cron/habit-alarm.sh) so the nag still fires even when Obsidian is closed.',
+			cls: "setting-item-description",
+		});
+		this.renderLastCallAlarmsSection(containerEl);
+
 		containerEl.createEl("h3", { text: "Sign in" });
 		this.statusEl = containerEl.createEl("p", { cls: "setting-item-description" });
 		this.updateStatus();
@@ -1145,6 +1457,167 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 			session ? `Signed in as ${session.user.email}. Syncing live.` : "Not signed in. Habit data is local-only on this device."
 		);
 	}
+
+	// One row per configured milestone (editable value + a remove button),
+	// plus an "add a new one" row at the bottom — same
+	// list-with-inline-edit/remove shape as the color-wheel swatches in
+	// HabitFormModal, just built from Setting rows since this is a
+	// PluginSettingTab rather than a modal.
+	renderMilestonesSection(containerEl: HTMLElement) {
+		const listEl = containerEl.createDiv({ cls: "habit-tracker-settings-milestones-list" });
+
+		const renderList = () => {
+			listEl.empty();
+			const sorted = [...this.plugin.settings.milestones].sort((a, b) => a - b);
+			if (sorted.length === 0) {
+				listEl.createEl("p", { text: "No milestones configured — celebrations won't trigger.", cls: "setting-item-description" });
+			}
+			for (const m of sorted) {
+				new Setting(listEl)
+					.setName(`${m} days`)
+					.addText((text) =>
+						text
+							.setValue("" + m)
+							.onChange(async (value) => {
+								const n = parseInt(value, 10);
+								if (!Number.isFinite(n) || n <= 0) return;
+								const idx = this.plugin.settings.milestones.indexOf(m);
+								if (idx === -1) return;
+								this.plugin.settings.milestones[idx] = n;
+								await this.plugin.saveSettings();
+							})
+					)
+					.addButton((btn) =>
+						btn
+							.setButtonText("🗑")
+							.setTooltip("Remove milestone")
+							.onClick(async () => {
+								this.plugin.settings.milestones = this.plugin.settings.milestones.filter((x) => x !== m);
+								await this.plugin.saveSettings();
+								renderList();
+							})
+					);
+			}
+		};
+		renderList();
+
+		let newMilestoneValue = "";
+		let newMilestoneTextEl: HTMLInputElement;
+		new Setting(containerEl)
+			.setName("Add milestone")
+			.setDesc("Enter a day-streak count, e.g. 500.")
+			.addText((text) => {
+				newMilestoneTextEl = text.inputEl;
+				text.setPlaceholder("500").onChange((value) => {
+					newMilestoneValue = value;
+				});
+			})
+			.addButton((btn) =>
+				btn
+					.setButtonText("Add")
+					.setCta()
+					.onClick(async () => {
+						const n = parseInt(newMilestoneValue, 10);
+						if (!Number.isFinite(n) || n <= 0) {
+							new Notice("Enter a positive whole number of days.");
+							return;
+						}
+						if (this.plugin.settings.milestones.includes(n)) {
+							new Notice("That milestone already exists.");
+							return;
+						}
+						this.plugin.settings.milestones.push(n);
+						await this.plugin.saveSettings();
+						newMilestoneValue = "";
+						newMilestoneTextEl.value = "";
+						renderList();
+					})
+			);
+	}
+
+	// Same list-with-inline-edit/remove + "add a new one" row shape as
+	// renderMilestonesSection above, for settings.lastCallAlarms.
+	renderLastCallAlarmsSection(containerEl: HTMLElement) {
+		const listEl = containerEl.createDiv({ cls: "habit-tracker-settings-lastcall-list" });
+
+		const renderList = () => {
+			listEl.empty();
+			const alarms = this.plugin.settings.lastCallAlarms;
+			if (alarms.length === 0) {
+				listEl.createEl("p", { text: "No last call alarms configured.", cls: "setting-item-description" });
+			}
+			for (const alarm of alarms) {
+				new Setting(listEl)
+					.setName(alarm.name)
+					.addText((text) => {
+						text.inputEl.type = "time";
+						text.setValue(alarm.time).onChange(async (value) => {
+							if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return;
+							alarm.time = value;
+							await this.plugin.saveSettings();
+						});
+					})
+					.addToggle((toggle) =>
+						toggle.setValue(alarm.enabled).onChange(async (value) => {
+							alarm.enabled = value;
+							await this.plugin.saveSettings();
+						})
+					)
+					.addButton((btn) =>
+						btn
+							.setButtonText("🗑")
+							.setTooltip("Remove last call alarm")
+							.onClick(async () => {
+								this.plugin.settings.lastCallAlarms = this.plugin.settings.lastCallAlarms.filter((a) => a.id !== alarm.id);
+								await this.plugin.saveSettings();
+								renderList();
+							})
+					);
+			}
+		};
+		renderList();
+
+		let newAlarmName = "";
+		let newAlarmTime = "20:00";
+		let newAlarmNameTextEl: HTMLInputElement;
+		new Setting(containerEl)
+			.setName("Add last call alarm")
+			.setDesc('Name it (e.g. "Log off for the day") and pick a time.')
+			.addText((text) => {
+				newAlarmNameTextEl = text.inputEl;
+				text.setPlaceholder("Name").onChange((value) => {
+					newAlarmName = value;
+				});
+			})
+			.addText((text) => {
+				text.inputEl.type = "time";
+				text.setValue(newAlarmTime).onChange((value) => {
+					if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return;
+					newAlarmTime = value;
+				});
+			})
+			.addButton((btn) =>
+				btn
+					.setButtonText("Add")
+					.setCta()
+					.onClick(async () => {
+						if (!newAlarmName.trim()) {
+							new Notice("Enter a name for the alarm.");
+							return;
+						}
+						this.plugin.settings.lastCallAlarms.push({
+							id: slugify(newAlarmName) + "-" + Date.now(),
+							name: newAlarmName.trim(),
+							time: newAlarmTime,
+							enabled: true,
+						});
+						await this.plugin.saveSettings();
+						newAlarmName = "";
+						newAlarmNameTextEl.value = "";
+						renderList();
+					})
+			);
+	}
 }
 
 type ViewMode = "week" | "month" | "year" | "yeardays";
@@ -1199,15 +1672,24 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		el.addClass("habit-tracker-root");
 
 		const data = this.plugin.data;
-		const habits = this.filterName
+		const allItems = this.filterName
 			? data.habits.filter((h) => h.name.toLowerCase() === this.filterName!.toLowerCase())
 			: data.habits;
+
+		// Tasks: hidden entirely until their scheduled date arrives, then
+		// shown as a single checkable row (no heatmap/streak) rather than
+		// mixed into the regular habit grid list. Once checked off they
+		// auto-archive into a collapsed Done section below.
+		const today = todayStr();
+		const habits = allItems.filter((h) => h.kind !== "task");
+		const pendingTasks = allItems.filter((h) => h.kind === "task" && !h.archived && (h.scheduledDate ?? "") <= today);
+		const doneTasks = allItems.filter((h) => h.kind === "task" && h.archived);
 
 		const toggleRow = el.createDiv({ cls: "habit-tracker-global-toggle-row" });
 		const leftGroup = toggleRow.createDiv({ cls: "habit-tracker-toggle-row-left" });
 		if (!this.filterName) {
 			const walkthroughBtn = leftGroup.createEl("button", {
-				text: "🎓 Habit Creation Walkthrough",
+				text: "🎓 Creation Walkthrough",
 				cls: "habit-tracker-walkthrough-btn",
 			});
 			walkthroughBtn.type = "button";
@@ -1233,7 +1715,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			gearBtn.onclick = () => this.toggleSettingsPanel();
 		}
 
-		if (habits.length === 0 && !this.filterName) {
+		const visibleCount = habits.length + pendingTasks.length + doneTasks.length;
+		if (visibleCount === 0 && !this.filterName) {
 			const empty = el.createDiv({ cls: "habit-tracker-empty" });
 			empty.createDiv({ text: "🌱", cls: "habit-tracker-empty-icon" });
 			empty.createDiv({ text: "No habits yet", cls: "habit-tracker-empty-title" });
@@ -1241,15 +1724,29 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				text: "Every streak starts with day one — add your first habit below to get started.",
 				cls: "habit-tracker-empty-subtitle",
 			});
-		} else if (habits.length === 0 && this.filterName) {
+		} else if (visibleCount === 0 && this.filterName) {
 			const empty = el.createDiv({ cls: "habit-tracker-empty" });
 			empty.createDiv({ text: "🔍", cls: "habit-tracker-empty-icon" });
 			empty.createDiv({ text: `No habit named "${this.filterName}" yet`, cls: "habit-tracker-empty-title" });
 		}
 
 		const list = el.createDiv({ cls: "habit-tracker-list" });
+		for (const task of pendingTasks) {
+			this.renderTask(list, task, today);
+		}
 		for (const habit of habits) {
 			this.renderHabit(list, habit);
+		}
+
+		if (doneTasks.length > 0) {
+			const doneToggle = el.createDiv({ cls: "habit-tracker-done-toggle", text: `✅ Done (${doneTasks.length})` });
+			const doneSection = el.createDiv({ cls: "habit-tracker-done-section" });
+			for (const task of doneTasks) {
+				this.renderTask(doneSection, task, today);
+			}
+			doneToggle.onclick = () => {
+				doneSection.toggleClass("habit-tracker-done-section-visible", !doneSection.hasClass("habit-tracker-done-section-visible"));
+			};
 		}
 
 		if (!this.filterName) {
@@ -1280,6 +1777,11 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					color: values.color,
 					createdAt: todayStr(),
 					type: values.type,
+					kind: values.kind,
+					scheduledDate: values.kind === "task" ? values.scheduledDate : undefined,
+					alarmEnabled: values.kind === "task" ? undefined : values.alarmEnabled,
+					alarmTime: values.kind === "task" ? undefined : values.alarmTime,
+					alarmRepeatMinutes: values.kind === "task" ? undefined : values.alarmRepeatMinutes,
 					stackedAfter: values.stackedAfter || undefined,
 					craving: values.craving || undefined,
 					minimumVersion: values.minimumVersion || undefined,
@@ -1417,6 +1919,104 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		document.addEventListener("keydown", closeOnEscape);
 	}
 
+	// A one-off scheduled task: a single checkable row, not the full
+	// heatmap/streak card a recurring habit gets. Completion reuses the
+	// same entries[id][date] mechanism as habits — a task's one and only
+	// trackable day is its own scheduledDate.
+	renderTask(parentEl: HTMLElement, task: HabitDefinition, today: string) {
+		const entries = this.plugin.data.entries[task.id] || (this.plugin.data.entries[task.id] = {});
+		const date = task.scheduledDate ?? today;
+		const done = !!entries[date];
+		const overdue = !done && date < today;
+
+		const row = parentEl.createDiv({ cls: "habit-tracker-task-row" + (done ? " habit-tracker-task-row-done" : "") + (overdue ? " habit-tracker-task-row-overdue" : "") });
+		row.style.setProperty("--habit-color", task.color);
+
+		const header = row.createDiv({ cls: "habit-tracker-task-header" });
+
+		const checkbox = header.createEl("input", { cls: "habit-tracker-task-checkbox" });
+		checkbox.type = "checkbox";
+		checkbox.checked = done;
+		checkbox.setAttr("aria-label", `Mark "${task.name}" done`);
+		checkbox.onchange = async () => {
+			if (checkbox.checked) {
+				entries[date] = true;
+				task.archived = true;
+			} else {
+				delete entries[date];
+				task.archived = false;
+			}
+			await this.plugin.persist();
+			this.plugin.refreshAll();
+		};
+
+		const dot = header.createSpan({ cls: "habit-tracker-dot" });
+		dot.style.backgroundColor = task.color;
+		header.createSpan({ text: task.name, cls: "habit-tracker-task-name" });
+		header.createSpan({ text: overdue ? `⚠️ Overdue (${date})` : date, cls: "habit-tracker-task-date" });
+
+		const editBtn = header.createSpan({ text: "✏️", cls: "habit-tracker-edit-btn" });
+		editBtn.setAttr("aria-label", "Edit task");
+		editBtn.onclick = () => {
+			new HabitFormModal(this.plugin.app, this.plugin, {
+				title: "Edit task",
+				submitLabel: "Save",
+				initial: task,
+				onSubmit: async (values) => {
+					task.name = values.name;
+					task.color = values.color;
+					task.kind = values.kind;
+					task.scheduledDate = values.kind === "task" ? values.scheduledDate : undefined;
+					if (values.kind === "task") task.archived = false;
+					task.type = values.type;
+					task.stackedAfter = values.stackedAfter || undefined;
+					task.craving = values.craving || undefined;
+					task.minimumVersion = values.minimumVersion || undefined;
+					task.reward = values.reward || undefined;
+					task.identity = values.identity || undefined;
+					task.linkedGoal = values.linkedGoal || undefined;
+					await this.plugin.persist();
+					this.plugin.refreshAll();
+				},
+			}).open();
+		};
+
+		const deleteBtn = header.createSpan({ text: "🗑", cls: "habit-tracker-delete-btn" });
+		deleteBtn.setAttr("aria-label", "Delete task");
+		deleteBtn.onclick = () => {
+			new ConfirmDeleteModal(this.plugin.app, task.name, async () => {
+				this.plugin.data.habits = this.plugin.data.habits.filter((h) => h.id !== task.id);
+				delete this.plugin.data.entries[task.id];
+				await this.plugin.persist();
+				this.plugin.refreshAll();
+			}).open();
+		};
+
+		// Same accountability levers as a habit — captured on the same form,
+		// so worth surfacing here too rather than only at creation time.
+		if (task.identity) {
+			row.createDiv({ text: `→ ${task.identity}`, cls: "habit-tracker-identity" });
+		}
+		if (task.stackedAfter) {
+			row.createDiv({ text: `⛓ Trigger: ${task.stackedAfter}`, cls: "habit-tracker-meta-line" });
+		}
+		if (task.craving) {
+			row.createDiv({ text: `🍯 Craving: ${task.craving}`, cls: "habit-tracker-meta-line" });
+		}
+		if (task.minimumVersion) {
+			row.createDiv({ text: `💡 Routine: ${task.minimumVersion}`, cls: "habit-tracker-meta-line" });
+		}
+		if (task.reward) {
+			row.createDiv({ text: `🎉 Reward: ${task.reward}`, cls: "habit-tracker-meta-line" });
+		}
+		if (task.linkedGoal) {
+			const goalLink = row.createDiv({ text: `🎯 ${task.linkedGoal}`, cls: "habit-tracker-meta-line habit-tracker-goal-link" });
+			goalLink.onclick = () => {
+				this.plugin.app.workspace.openLinkText(task.linkedGoal!, "", false);
+			};
+		}
+	}
+
 	renderHabit(parentEl: HTMLElement, habit: HabitDefinition) {
 		const entries = this.plugin.data.entries[habit.id] || (this.plugin.data.entries[habit.id] = {});
 		const stats = computeStats(entries);
@@ -1449,6 +2049,14 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		bestPill.createSpan({ text: `${stats.bestStreak}`, cls: "habit-tracker-pill-value" });
 		bestPill.createSpan({ text: "best", cls: "habit-tracker-pill-label" });
 
+		const weekPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
+		weekPill.createSpan({ text: `${stats.totalThisWeek}`, cls: "habit-tracker-pill-value" });
+		weekPill.createSpan({ text: "this week", cls: "habit-tracker-pill-label" });
+
+		const monthPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
+		monthPill.createSpan({ text: `${stats.totalThisMonth}`, cls: "habit-tracker-pill-value" });
+		monthPill.createSpan({ text: "this month", cls: "habit-tracker-pill-label" });
+
 		const totalPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
 		totalPill.createSpan({ text: `${stats.total}`, cls: "habit-tracker-pill-value" });
 		totalPill.createSpan({ text: "votes", cls: "habit-tracker-pill-label" });
@@ -1457,7 +2065,14 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		yearPill.createSpan({ text: `${stats.totalThisYear}`, cls: "habit-tracker-pill-value" });
 		yearPill.createSpan({ text: "this year", cls: "habit-tracker-pill-label" });
 
-		const editBtn = statsRow.createSpan({ text: "✏️", cls: "habit-tracker-edit-btn" });
+		// Own container, deliberately kept separate from statsRow — the
+		// number of stat pills can grow (and does, per-habit-type), and
+		// these two buttons must never be the thing that gets squeezed off
+		// the edge on a narrow/mobile viewport as a result. See styles.css
+		// .habit-tracker-actions for the flex-shrink:0 + wrap handling.
+		const actionsRow = header.createDiv({ cls: "habit-tracker-actions" });
+
+		const editBtn = actionsRow.createSpan({ text: "✏️", cls: "habit-tracker-edit-btn" });
 		editBtn.setAttr("aria-label", "Edit habit");
 		editBtn.onclick = () => {
 			new HabitFormModal(this.plugin.app, this.plugin, {
@@ -1468,6 +2083,16 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					habit.name = values.name;
 					habit.color = values.color;
 					habit.type = values.type;
+					habit.kind = values.kind;
+					habit.scheduledDate = values.kind === "task" ? values.scheduledDate : undefined;
+					// Changing a task's scheduled date is how you reschedule a
+					// missed/overdue one — un-archive it so it re-enters the
+					// pending list under its new date instead of staying stuck
+					// in Done/overdue limbo.
+					if (values.kind === "task") habit.archived = false;
+					habit.alarmEnabled = values.kind === "task" ? undefined : values.alarmEnabled;
+					habit.alarmTime = values.kind === "task" ? undefined : values.alarmTime;
+					habit.alarmRepeatMinutes = values.kind === "task" ? undefined : values.alarmRepeatMinutes;
 					habit.stackedAfter = values.stackedAfter || undefined;
 					habit.craving = values.craving || undefined;
 					habit.minimumVersion = values.minimumVersion || undefined;
@@ -1480,7 +2105,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			}).open();
 		};
 
-		const deleteBtn = statsRow.createSpan({ text: "🗑", cls: "habit-tracker-delete-btn" });
+		const deleteBtn = actionsRow.createSpan({ text: "🗑", cls: "habit-tracker-delete-btn" });
 		deleteBtn.setAttr("aria-label", "Delete habit");
 		deleteBtn.onclick = () => {
 			new ConfirmDeleteModal(this.plugin.app, habit.name, async () => {
@@ -1492,18 +2117,22 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			}).open();
 		};
 
-		// Days-to-next-milestone bubble, shared MILESTONES list with
-		// maybeCelebrate()/playCelebrationChime(). On the exact day a
+		// Days-to-next-milestone bubble, sourced from the same configurable
+		// settings.milestones list as maybeCelebrate()/playCelebrationChime()
+		// (see HabitTrackerPlugin.sortedMilestones()). On the exact day a
 		// milestone is hit, this flips to an "Achieved" state for the rest
 		// of that day; the next tracked day (once the streak moves past
 		// that milestone number) it reverts to counting down to whichever
 		// milestone comes next.
+		const milestones = this.plugin.sortedMilestones();
 		const milestoneBubble = card.createDiv({ cls: "habit-tracker-milestone-bubble" });
-		if (MILESTONES.includes(stats.streak)) {
+		if (milestones.length === 0) {
+			milestoneBubble.remove();
+		} else if (milestones.includes(stats.streak)) {
 			milestoneBubble.addClass("habit-tracker-milestone-bubble-achieved");
 			milestoneBubble.setText(`🎉 ${stats.streak}-Day Milestone Achieved!`);
 		} else {
-			const nextMilestone = MILESTONES.find((m) => m > stats.streak);
+			const nextMilestone = milestones.find((m) => m > stats.streak);
 			if (nextMilestone !== undefined) {
 				const daysLeft = nextMilestone - stats.streak;
 				milestoneBubble.setText(`🎯 ${daysLeft} ${daysLeft === 1 ? "day" : "days"} to next milestone`);
@@ -1705,6 +2334,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		const futureCls = boxed ? "habit-tracker-week-cell-future" : "habit-tracker-cell-future";
 		const doneCls = boxed ? "habit-tracker-week-cell-done" : "habit-tracker-cell-done";
+		const missedCls = boxed ? "habit-tracker-week-cell-missed" : "habit-tracker-cell-missed";
 
 		if (d > today) {
 			cell.addClass(futureCls);
@@ -1716,9 +2346,19 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			if (entries[dateStr] === "min") {
 				cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
 			}
+		} else if (dateStr < todayStr()) {
+			// A day strictly before today with no entry — visibly greyed out
+			// so a gap in the streak reads at a glance, in every view (year,
+			// year-days, week, month all funnel through this one function).
+			// Today itself is excluded even before it's checked off, since a
+			// streak isn't broken until the day is actually over.
+			cell.addClass(missedCls);
 		}
 		if (dateStr === todayStr()) {
 			cell.addClass("habit-tracker-cell-today");
+			if (isStreakAtRisk(entries)) {
+				cell.addClass("habit-tracker-cell-at-risk");
+			}
 		}
 		cell.onclick = async () => {
 			const oldStreak = computeStats(entries).streak;
@@ -1746,13 +2386,61 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			if (this.plugin.settings.celebrationEffectsEnabled) {
 				const card = cell.closest<HTMLElement>(".habit-tracker-habit");
 				if (card) burstConfetti(card, cell, habit.color);
-				playCelebrationChime(newStreak, MILESTONES.includes(newStreak));
+				playCelebrationChime(newStreak, this.plugin.settings.milestones.includes(newStreak));
 			}
 			window.setTimeout(() => {
 				this.plugin.refreshAll();
 				this.plugin.maybeCelebrate(habit, oldStreak, newStreak);
 			}, 160);
 		};
+	}
+}
+
+// ---- Dedicated full-tab view — same rendering as an unfiltered,
+// no-options `habit-tracker` code block (all habits, "+ Add Habit",
+// Year/Month/Week/Year-Days toggle), just opened in its own workspace tab
+// instead of embedded in a note. HabitTrackerBlock itself already contains
+// no markdown-specific logic (nothing touches MarkdownPostProcessorContext),
+// so it's reused here as-is via Component.addChild — the same lifecycle
+// mechanism the code-block processor uses via ctx.addChild — rather than
+// duplicating its render logic. That also means this view's block
+// auto-registers with/unregisters from the plugin's refreshAll() broadcast,
+// same as any embedded block.
+const HABIT_TRACKER_VIEW_TYPE = "habit-tracker-view";
+
+class HabitTrackerView extends ItemView {
+	plugin: HabitTrackerPlugin;
+	block: HabitTrackerBlock | null = null;
+
+	constructor(leaf: WorkspaceLeaf, plugin: HabitTrackerPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+	}
+
+	getViewType() {
+		return HABIT_TRACKER_VIEW_TYPE;
+	}
+	getDisplayText() {
+		return "Habit Tracker";
+	}
+	getIcon() {
+		return "flame";
+	}
+
+	async onOpen() {
+		const root = this.contentEl;
+		root.empty();
+		root.addClass("habit-tracker-view-root");
+		// No habit filter, "week" default — identical to what a bare
+		// ```habit-tracker``` block with no options renders.
+		this.block = new HabitTrackerBlock(root, this.plugin, null, "week");
+		this.addChild(this.block);
+	}
+
+	async onClose() {
+		// this.block is a child Component — Obsidian unloads/unregisters it
+		// automatically when this view unloads, same as MarkdownRenderChild
+		// cleanup for an embedded block.
 	}
 }
 
@@ -1785,10 +2473,33 @@ export default class HabitTrackerPlugin extends Plugin {
 	session: Session | null = null;
 	private realtimeChannel: RealtimeChannel | null = null;
 	private blocks: Set<HabitTrackerBlock> = new Set();
+	// In-memory only (doesn't need to persist/survive a restart) tracking of
+	// each alarm's last fire, so checkAlarm() can space repeats apart
+	// instead of nagging on every ~1-minute tick — one map entry per habit
+	// id / last-call alarm id. lastAlarmTickDate resets all of this (plus
+	// the last-call dismissed-today set) at the start of each new day, so a
+	// repeat gap from late last night never delays today's very first nag,
+	// and yesterday's dismissals never silently suppress today's.
+	private habitAlarmLastFiredAt: Map<string, number> = new Map();
+	private lastCallAlarmLastFiredAt: Map<string, number> = new Map();
+	private lastCallDismissedToday: Map<string, string> = new Map(); // alarmId -> "YYYY-MM-DD" it was dismissed on
+	private lastAlarmTickDate: string | null = null;
 
 	async onload() {
 		const saved = await this.loadData();
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved?.settings);
+		// Migrate old data.json without a milestones field, and guard against
+		// a corrupt/non-array value — never crash load over it. Copied
+		// (rather than sharing DEFAULT_MILESTONES/saved's array by
+		// reference) since the settings tab mutates this array in place.
+		this.settings.milestones =
+			Array.isArray(saved?.settings?.milestones) && saved.settings.milestones.length > 0
+				? [...saved.settings.milestones]
+				: [...DEFAULT_MILESTONES];
+		// Defensive migration, same spirit as milestones above: guard
+		// against a corrupt/hand-edited data.json rather than letting it
+		// silently break checkAlarm()'s comparisons.
+		this.settings.lastCallAlarms = Array.isArray(saved?.settings?.lastCallAlarms) ? [...saved.settings.lastCallAlarms] : [];
 		this.data = {
 			habits: saved?.habits ?? DEFAULT_DATA.habits,
 			entries: saved?.entries ?? DEFAULT_DATA.entries,
@@ -1797,6 +2508,10 @@ export default class HabitTrackerPlugin extends Plugin {
 		};
 
 		this.addSettingTab(new HabitTrackerSettingTab(this.app, this));
+
+		this.registerView(HABIT_TRACKER_VIEW_TYPE, (leaf) => new HabitTrackerView(leaf, this));
+		this.addRibbonIcon("flame", "Open Habit Tracker", () => this.activateView());
+		this.addCommand({ id: "open-habit-tracker", name: "Open Habit Tracker", callback: () => this.activateView() });
 
 		this.registerMarkdownCodeBlockProcessor("habit-tracker", (source, el, ctx) => {
 			const filterMatch = source.match(/^\s*habit:\s*(.+)\s*$/m);
@@ -1833,10 +2548,111 @@ export default class HabitTrackerPlugin extends Plugin {
 		if (this.settings.supabaseUrl && this.settings.supabaseAnonKey) {
 			await this.initSupabase();
 		}
+
+		// Check-in alarm: registerInterval (same pattern as the local-fallback
+		// poll above) ties this to the plugin's lifecycle, so it's cleared
+		// automatically on unload without needing an explicit clearInterval.
+		// ~1-minute granularity is plenty for a "did you check in today"
+		// nag — checkAlarm() itself decides whether alarmRepeatMinutes has
+		// actually elapsed before firing anything.
+		this.registerInterval(window.setInterval(() => this.checkAlarm(), 60000));
+		// Also run once immediately, in case Obsidian is opened after the
+		// alarm time has already passed — otherwise the first nag would wait
+		// up to a full minute for no reason.
+		this.checkAlarm();
+	}
+
+	// Runs every ~1 minute (see the registerInterval call above) and drives
+	// both alarm kinds independently:
+	//  - Per-habit alarms (HabitDefinition.alarmEnabled/alarmTime/
+	//    alarmRepeatMinutes): fires once alarmTime passes local time and
+	//    that specific habit isn't checked in yet today, repeating every
+	//    alarmRepeatMinutes until it is. Re-reads this.data.entries fresh
+	//    on every call (never a cached/stale snapshot), so checking in a
+	//    habit naturally stops its nag on the very next tick.
+	//  - Last call alarms (settings.lastCallAlarms): fires once their time
+	//    passes local time, with no data condition to auto-silence it —
+	//    it repeats every LAST_CALL_REPEAT_MINUTES until explicitly
+	//    dismissed via the Notice's own Dismiss button, and that dismissal
+	//    only holds for the rest of the current calendar day.
+	checkAlarm() {
+		const today = todayStr();
+		const now = new Date();
+		const nowStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+		const nowMs = Date.now();
+
+		// Day-boundary reset: clear every alarm's "last fired" clock and the
+		// last-call dismissed-today set once the calendar day rolls over, so
+		// nothing carries over from yesterday and silently suppresses today.
+		if (this.lastAlarmTickDate !== today) {
+			this.habitAlarmLastFiredAt.clear();
+			this.lastCallAlarmLastFiredAt.clear();
+			this.lastCallDismissedToday.clear();
+			this.lastAlarmTickDate = today;
+		}
+
+		for (const habit of this.data.habits) {
+			if (habit.kind === "task" || !habit.alarmEnabled || !habit.alarmTime) continue;
+			if (nowStr < habit.alarmTime) continue;
+			if (this.data.entries[habit.id]?.[today] === true) continue;
+
+			const repeatMinutes = habit.alarmRepeatMinutes && habit.alarmRepeatMinutes > 0 ? habit.alarmRepeatMinutes : 10;
+			const lastFired = this.habitAlarmLastFiredAt.get(habit.id);
+			if (lastFired !== undefined && nowMs - lastFired < repeatMinutes * 60000) continue;
+
+			this.habitAlarmLastFiredAt.set(habit.id, nowMs);
+			playAlarmChime();
+			const notice = new Notice(`⏰ "${habit.name}" not checked in yet`, 15000);
+			notice.noticeEl.addClass("habit-tracker-alarm-notice");
+		}
+
+		for (const alarm of this.settings.lastCallAlarms) {
+			if (!alarm.enabled) continue;
+			if (nowStr < alarm.time) continue;
+			if (this.lastCallDismissedToday.get(alarm.id) === today) continue;
+
+			const lastFired = this.lastCallAlarmLastFiredAt.get(alarm.id);
+			if (lastFired !== undefined && nowMs - lastFired < LAST_CALL_REPEAT_MINUTES * 60000) continue;
+
+			this.lastCallAlarmLastFiredAt.set(alarm.id, nowMs);
+			playAlarmChime();
+			this.showLastCallNotice(alarm);
+		}
+	}
+
+	// A last call alarm's Notice includes its own Dismiss button (built via
+	// a DocumentFragment, since Notice's message can be a string or a
+	// DocumentFragment) — clicking it records today's date against this
+	// alarm so checkAlarm() skips it for the rest of the day, then hides
+	// the notice immediately rather than waiting out its own duration.
+	showLastCallNotice(alarm: LastCallAlarm) {
+		const frag = createFragment((el) => {
+			el.createSpan({ text: `⏰ Last call: "${alarm.name}"` });
+			const dismissBtn = el.createEl("button", { text: "Dismiss", cls: "habit-tracker-alarm-notice-dismiss" });
+			dismissBtn.type = "button";
+			dismissBtn.onclick = (e) => {
+				e.stopPropagation();
+				this.lastCallDismissedToday.set(alarm.id, todayStr());
+				notice.hide();
+			};
+		});
+		const notice = new Notice(frag, 20000);
+		notice.noticeEl.addClass("habit-tracker-alarm-notice");
 	}
 
 	onunload() {
 		if (this.realtimeChannel) this.supabase?.removeChannel(this.realtimeChannel);
+	}
+
+	async activateView() {
+		const existing = this.app.workspace.getLeavesOfType(HABIT_TRACKER_VIEW_TYPE);
+		if (existing.length) {
+			this.app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+		const leaf = this.app.workspace.getLeaf("tab");
+		await leaf.setViewState({ type: HABIT_TRACKER_VIEW_TYPE, active: true });
+		this.app.workspace.revealLeaf(leaf);
 	}
 
 	async initSupabase() {
@@ -1981,24 +2797,42 @@ export default class HabitTrackerPlugin extends Plugin {
 		}
 	}
 
+	// Ascending copy of settings.milestones for read sites that need the
+	// "next milestone above X" ordering (the milestone bubble, and the
+	// first-match-wins loop in maybeCelebrate() below). Storage order
+	// doesn't matter — settings.milestones itself is left exactly as the
+	// user entered/reordered it in the settings tab.
+	sortedMilestones(): number[] {
+		return [...this.settings.milestones].sort((a, b) => a - b);
+	}
+
 	// Law 4 (Make it Satisfying): an immediate reward beyond the visual
 	// heatmap for crossing a real milestone, since delayed real-world
 	// payoffs are exactly what habit tracking is meant to compensate for.
+	// Only fires the day a streak newly crosses a threshold (oldStreak < m
+	// <= newStreak) — never on a render that merely displays an
+	// already-reached streak.
 	maybeCelebrate(habit: HabitDefinition, oldStreak: number, newStreak: number) {
-		for (const m of MILESTONES) {
+		for (const m of this.sortedMilestones()) {
 			if (oldStreak < m && newStreak >= m) {
 				const label = habit.type === "break" ? "clean streak" : "day streak";
 				new Notice(`🎉 ${newStreak}-${label} on "${habit.name}"! Keep going.`);
 				// The toast fades and is easy to miss — echo the milestone as
-				// a brief glow directly on the streak pill it's about, so
+				// a brief glow directly on the streak pill it's about, plus a
+				// bigger falling-confetti burst across the whole card, so
 				// there's an in-card moment to match it.
 				for (const block of this.blocks) {
-					const pill = block.containerEl.querySelector(
-						`.habit-tracker-habit[data-habit-id="${CSS.escape(habit.id)}"] .habit-tracker-pill-streak`
+					const card = block.containerEl.querySelector(
+						`.habit-tracker-habit[data-habit-id="${CSS.escape(habit.id)}"]`
 					);
+					if (!(card instanceof HTMLElement)) continue;
+					const pill = card.querySelector(".habit-tracker-pill-streak");
 					if (pill instanceof HTMLElement) {
 						pill.addClass("habit-tracker-pill-celebrate");
 						window.setTimeout(() => pill.removeClass("habit-tracker-pill-celebrate"), 1400);
+					}
+					if (this.settings.celebrationEffectsEnabled) {
+						burstMilestoneConfetti(card, habit.color);
 					}
 				}
 				break;
