@@ -34,15 +34,21 @@ interface HabitDefinition {
 	alarmEnabled?: boolean;
 	alarmTime?: string; // "HH:MM", 24h, local time
 	alarmRepeatMinutes?: number; // default 10 if alarmEnabled but unset
-	// Twice Daily (habit kind only): opt-in second occurrence per day
-	// ("Morning"/"Evening"), each independently checkable. Either occurrence
-	// done counts the day toward streaks (see EntryValue). alarmEnabled2/
-	// alarmTime2/alarmRepeatMinutes2 mirror the existing alarm* fields above
-	// but drive the Evening occurrence's own alarm.
-	twiceDaily?: boolean;
-	alarmEnabled2?: boolean;
-	alarmTime2?: string; // "HH:MM", 24h, local time
-	alarmRepeatMinutes2?: number; // default 10 if alarmEnabled2 but unset
+	// Optional display-only qualifier — prefixes the DISPLAYED name (see
+	// habitDisplayName()) without touching the stored base `name`. Habit-only
+	// (meaningless for a one-off task).
+	timeOfDay?: "morning" | "midday" | "evening";
+}
+
+type TimeOfDay = "morning" | "midday" | "evening";
+const TIME_OF_DAY_LABELS: Record<TimeOfDay, string> = { morning: "Morning", midday: "Mid-day", evening: "Evening" };
+
+// The name to display everywhere a habit's name is shown to the user —
+// prefixes the base `name` with its Time of Day qualifier (if set) without
+// ever mutating the stored name itself. Habit-only; tasks don't have a
+// timeOfDay field so this is a no-op for them.
+function habitDisplayName(habit: HabitDefinition): string {
+	return habit.timeOfDay ? `${TIME_OF_DAY_LABELS[habit.timeOfDay]} ${habit.name}` : habit.name;
 }
 
 // A generic, non-habit-tied nag — "last call" for whatever the name
@@ -58,14 +64,10 @@ interface LastCallAlarm {
 	enabled: boolean;
 }
 
-// A day can be a full completion (true), the minimum/2-minute-rule version
-// (Law 3), or — for a Twice Daily habit — an object tracking each named
-// occurrence independently. All forms count toward streaks ("showing up" is
-// what matters), but render differently so the distinction stays visible.
-// Invariant: never persist an empty occurrence object — when both
-// occurrences are cleared, delete the entries[dateStr] key entirely, same as
-// today.
-type EntryValue = true | "min" | { morning?: true; evening?: true };
+// A day can be a full completion (true) or the minimum/2-minute-rule version
+// (Law 3). Both count toward streaks ("showing up" is what matters), but
+// render differently so the distinction stays visible.
+type EntryValue = true | "min";
 
 interface PluginData {
 	habits: HabitDefinition[];
@@ -338,17 +340,6 @@ interface Stats {
 	totalThisWeek: number;
 	totalThisMonth: number;
 	totalThisYear: number;
-	totalOccurrences: number;
-}
-
-// Number of individual occurrences a single day's entry value represents:
-// 1 for a plain completion (true/"min"), and for a Twice Daily object, 1 per
-// occurrence actually marked done (0, 1, or 2). Lets totalOccurrences count
-// a day with both morning AND evening done as 2, instead of computeStats's
-// truthy-day counting (`total`) which treats it the same as a single done.
-function occurrenceCount(v: EntryValue): number {
-	if (typeof v === "object") return (v.morning ? 1 : 0) + (v.evening ? 1 : 0);
-	return 1;
 }
 
 function computeStats(entries: Record<string, EntryValue>): Stats {
@@ -356,7 +347,6 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 	let totalThisWeek = 0;
 	let totalThisMonth = 0;
 	let totalThisYear = 0;
-	let totalOccurrences = 0;
 	const now = new Date();
 	const currentYear = "" + now.getFullYear();
 	const currentYearMonth = currentYear + "-" + pad(now.getMonth() + 1);
@@ -366,7 +356,6 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 	for (const date in entries) {
 		if (entries[date]) {
 			total++;
-			totalOccurrences += occurrenceCount(entries[date]);
 			if (date.startsWith(currentYear)) totalThisYear++;
 			if (date.startsWith(currentYearMonth)) totalThisMonth++;
 			if (date >= weekStart && date <= weekEnd) totalThisWeek++;
@@ -393,7 +382,7 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 		cursor = addDays(cursor, -1);
 	}
 
-	return { streak, bestStreak: computeBestStreak(entries), total, totalThisWeek, totalThisMonth, totalThisYear, totalOccurrences };
+	return { streak, bestStreak: computeBestStreak(entries), total, totalThisWeek, totalThisMonth, totalThisYear };
 }
 
 // Longest streak ever achieved (same forgiving one-gap rule as the current
@@ -448,34 +437,6 @@ function nextEntryValue(current: EntryValue | undefined): EntryValue | undefined
 	return current === undefined ? true : undefined;
 }
 
-// Same idea as nextEntryValue, but for a Twice Daily habit: a 3-state cycle
-// (none -> one occurrence done -> both done -> none) instead of a 2-state
-// toggle. Chosen over per-occurrence click targets (e.g. splitting the cell
-// in half) because Year/Year-Days cells are too small for two independent
-// tap targets, especially on mobile.
-function nextEntryValueTwiceDaily(current: EntryValue | undefined): EntryValue | undefined {
-	if (current === undefined) return { morning: true };
-	if (current === true || current === "min") return undefined; // legacy value -> terminal, clears
-	if (current.morning && current.evening) return undefined;
-	return { morning: true, evening: true };
-}
-
-// True when a value represents a Twice Daily habit with exactly one of its
-// two occurrences done (used to add the dashed "-partial" render class).
-function isPartialOccurrence(v: EntryValue): boolean {
-	return typeof v === "object" && !(v.morning && v.evening);
-}
-
-// Whether a specific occurrence ("morning"/"evening") is done for a given
-// habit/date — used by checkAlarm()'s per-slot loop. A legacy plain-`true`
-// value counts as done for either slot (see EntryValue's migration note).
-function occurrenceDone(entries: Record<string, EntryValue> | undefined, date: string, occurrence: "morning" | "evening"): boolean {
-	const v = entries?.[date];
-	if (v === true) return true;
-	if (typeof v === "object") return !!v[occurrence];
-	return false;
-}
-
 interface HabitLevers {
 	// The Complete Habit Formula — Clear's own four-part sentence, one
 	// field per Law, in order:
@@ -498,10 +459,7 @@ interface HabitFormValues extends HabitLevers {
 	alarmEnabled: boolean;
 	alarmTime: string;
 	alarmRepeatMinutes: number;
-	twiceDaily: boolean;
-	alarmEnabled2: boolean;
-	alarmTime2: string;
-	alarmRepeatMinutes2: number;
+	timeOfDay: TimeOfDay | "";
 }
 
 // The Complete Habit Formula fields, matching the Four Laws 1:1.
@@ -729,6 +687,32 @@ interface HabitFormOptions {
 	initial?: Partial<HabitFormValues>;
 	onSubmit: (values: HabitFormValues) => void;
 	walkthrough?: boolean;
+	// Habit-only: when present, the form shows a "Split into two occurrences"
+	// panel that hands back two independent field sets (see
+	// habitFieldsFromFormValues) instead of the normal single onSubmit.
+	onSplit?: (originalValues: HabitFormValues, copyValues: HabitFormValues) => void | Promise<void>;
+}
+
+// Maps a completed HabitFormValues onto the subset of HabitDefinition fields
+// that a plain save (or a Split copy) actually writes — id/createdAt/kind/
+// archived are always handled separately by the caller. Only ever called
+// for kind: "habit" (Split is habit-only).
+function habitFieldsFromFormValues(values: HabitFormValues): Omit<HabitDefinition, "id" | "createdAt" | "kind" | "archived"> {
+	return {
+		name: values.name.trim(),
+		color: values.color,
+		type: values.type,
+		alarmEnabled: values.alarmEnabled,
+		alarmTime: values.alarmTime,
+		alarmRepeatMinutes: values.alarmRepeatMinutes,
+		timeOfDay: values.timeOfDay || undefined,
+		stackedAfter: values.stackedAfter.trim() || undefined,
+		craving: values.craving.trim() || undefined,
+		minimumVersion: values.minimumVersion.trim() || undefined,
+		reward: values.reward.trim() || undefined,
+		identity: values.identity.trim() || undefined,
+		linkedGoal: values.linkedGoal.trim() || undefined,
+	};
 }
 
 interface WalkthroughStep {
@@ -785,10 +769,7 @@ class HabitFormModal extends Modal {
 			alarmEnabled: opts.initial?.alarmEnabled ?? false,
 			alarmTime: opts.initial?.alarmTime ?? "20:00",
 			alarmRepeatMinutes: opts.initial?.alarmRepeatMinutes ?? 10,
-			twiceDaily: opts.initial?.twiceDaily ?? false,
-			alarmEnabled2: opts.initial?.alarmEnabled2 ?? false,
-			alarmTime2: opts.initial?.alarmTime2 ?? "08:00",
-			alarmRepeatMinutes2: opts.initial?.alarmRepeatMinutes2 ?? 10,
+			timeOfDay: opts.initial?.timeOfDay ?? "",
 			stackedAfter: opts.initial?.stackedAfter ?? "",
 			craving: opts.initial?.craving ?? "",
 			minimumVersion: opts.initial?.minimumVersion ?? "",
@@ -854,6 +835,22 @@ class HabitFormModal extends Modal {
 			advanceOnEnter(text.inputEl);
 		});
 
+		const timeOfDayWrap = contentEl.createDiv();
+		habitOnlySections.push(timeOfDayWrap);
+		new Setting(timeOfDayWrap)
+			.setName("Time of Day")
+			.setDesc('Optional — prefixes the displayed name (e.g. "Run" + Morning → "Morning Run") without changing the underlying Name field.')
+			.addDropdown((dd) => {
+				dd.addOption("", "— None —");
+				dd.addOption("morning", "Morning");
+				dd.addOption("midday", "Mid-day");
+				dd.addOption("evening", "Evening");
+				dd.setValue(this.values.timeOfDay);
+				dd.onChange((v) => {
+					this.values.timeOfDay = v as TimeOfDay | "";
+				});
+			});
+
 		let scheduledDateInputEl: HTMLInputElement;
 		const scheduledDateSetting = new Setting(contentEl).setName("Scheduled date").addText((text) => {
 			scheduledDateInputEl = text.inputEl;
@@ -868,13 +865,6 @@ class HabitFormModal extends Modal {
 			const isTask = this.values.kind === "task";
 			habitOnlySections.forEach((el) => el.toggleClass("habit-tracker-kind-hidden", isTask));
 			scheduledDateSetting.settingEl.toggleClass("habit-tracker-kind-hidden", !isTask);
-			// Evening Alarm has a second, independent visibility condition
-			// (Twice Daily) on top of the habit/task split every other
-			// habit-only section uses, so it's re-applied here rather than
-			// living in habitOnlySections — a task is never twiceDaily
-			// (nulled in both save handlers), so isTask alone is always
-			// enough to force it hidden regardless of the stale toggle value.
-			eveningAlarmWrap.toggleClass("habit-tracker-kind-hidden", isTask || !this.values.twiceDaily);
 		};
 
 		let kindSelectEl: HTMLSelectElement;
@@ -1126,32 +1116,12 @@ class HabitFormModal extends Modal {
 			};
 		}
 
-		// Twice Daily — habit-only (hidden for a task, same as Type above):
-		// opt-in second occurrence per day ("Morning"/"Evening"), each
-		// independently checkable. Placed immediately above the alarm
-		// section since it changes that section's own heading/shape.
-		const twiceDailyWrap = contentEl.createDiv();
-		habitOnlySections.push(twiceDailyWrap);
-		new Setting(twiceDailyWrap)
-			.setName("Twice Daily")
-			.setDesc("Track this habit as two independent occurrences per day (e.g. a morning and an evening meditation) instead of one.")
-			.addToggle((toggle) =>
-				toggle.setValue(this.values.twiceDaily).onChange((value) => {
-					this.values.twiceDaily = value;
-					alarmHeadingEl.setText(value ? "Morning Alarm" : "Check-in Alarm");
-					eveningAlarmWrap.toggleClass("habit-tracker-kind-hidden", !value);
-				})
-			);
-
 		// Per-habit check-in alarm — habit-only (hidden for a task, same as
 		// Type above), since the firing condition is "not checked in today,"
-		// which isn't meaningful for a one-off scheduled item. When Twice
-		// Daily is on, this section becomes the Morning occurrence's alarm
-		// and a second, identically-shaped Evening Alarm section appears
-		// below it.
+		// which isn't meaningful for a one-off scheduled item.
 		const alarmWrap = contentEl.createDiv();
 		habitOnlySections.push(alarmWrap);
-		const alarmHeadingEl = alarmWrap.createEl("h4", { text: this.values.twiceDaily ? "Morning Alarm" : "Check-in Alarm" });
+		alarmWrap.createEl("h4", { text: "Check-in Alarm" });
 		alarmWrap.createEl("p", {
 			cls: "setting-item-description",
 			text: "Once the alarm time passes local time with this habit not yet checked in today, nag (sound + banner) every few minutes until it is.",
@@ -1185,43 +1155,6 @@ class HabitFormModal extends Modal {
 				})
 			);
 
-		// Evening occurrence's alarm — identical shape to the section above,
-		// writing to the alarm*2 fields instead. Shown/hidden via the same
-		// habit-tracker-kind-hidden class habitOnlySections already uses,
-		// just toggled by the Twice Daily switch instead of Kind.
-		const eveningAlarmWrap = contentEl.createDiv();
-		eveningAlarmWrap.toggleClass("habit-tracker-kind-hidden", this.values.kind === "task" || !this.values.twiceDaily);
-		eveningAlarmWrap.createEl("h4", { text: "Evening Alarm" });
-		eveningAlarmWrap.createEl("p", {
-			cls: "setting-item-description",
-			text: "Once the alarm time passes local time with this habit's evening occurrence not yet checked in today, nag (sound + banner) every few minutes until it is.",
-		});
-		new Setting(eveningAlarmWrap).setName("Enable alarm").addToggle((toggle) =>
-			toggle.setValue(this.values.alarmEnabled2).onChange((value) => {
-				this.values.alarmEnabled2 = value;
-			})
-		);
-		new Setting(eveningAlarmWrap)
-			.setName("Alarm time")
-			.setDesc("24-hour local time (HH:MM).")
-			.addText((text) => {
-				text.inputEl.type = "time";
-				text.setValue(this.values.alarmTime2).onChange((value) => {
-					if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return;
-					this.values.alarmTime2 = value;
-				});
-			});
-		new Setting(eveningAlarmWrap)
-			.setName("Repeat every (minutes)")
-			.setDesc("How often to re-nag once the alarm time has passed and it's still not checked in.")
-			.addText((text) =>
-				text.setValue("" + this.values.alarmRepeatMinutes2).onChange((value) => {
-					const n = parseInt(value, 10);
-					if (!Number.isFinite(n) || n <= 0) return;
-					this.values.alarmRepeatMinutes2 = n;
-				})
-			);
-
 		let commitCheckboxEl: HTMLInputElement | undefined;
 		if (this.isNew) {
 			const commitWrap = contentEl.createDiv();
@@ -1244,6 +1177,87 @@ class HabitFormModal extends Modal {
 		const submitBtn = footer.createEl("button", { text: this.opts.submitLabel, cls: "mod-cta" });
 		submitBtn.onclick = () => this.submit();
 		focusOrder.push(submitBtn);
+
+		// Split — habit-only (hidden for a task, same as every other section
+		// pushed onto habitOnlySections), and only offered at all when the
+		// caller wired onSplit (both habit call sites do; task-edit doesn't).
+		// Inline toggle/panel, not a chained second modal — matches the
+		// fourLawsToggle/-Box precedent above rather than inventing new
+		// modal-within-modal plumbing.
+		if (this.opts.onSplit) {
+			const splitWrap = contentEl.createDiv();
+			habitOnlySections.push(splitWrap);
+			const splitToggle = splitWrap.createDiv({
+				cls: "habit-tracker-split-toggle",
+				text: "🪓 Split into two occurrences",
+			});
+			const splitPanel = splitWrap.createDiv({ cls: "habit-tracker-split-panel" });
+			splitPanel.createEl("p", {
+				cls: "setting-item-description",
+				text: "Creates a fully independent copy of this habit with its own streak — useful when the same habit happens at two different times of day with different triggers (e.g. a morning and an evening meditation).",
+			});
+
+			let splitTriggerEl: HTMLTextAreaElement;
+			new Setting(splitPanel)
+				.setName("New Trigger for the copy")
+				.setDesc('Required — the copy starts with a blank Trigger since "After I ___" is usually different for the second occurrence.')
+				.addTextArea((text) => {
+					splitTriggerEl = text.inputEl;
+					autoGrow(text.inputEl);
+					text.inputEl.addEventListener("input", () => autoGrow(text.inputEl));
+				});
+
+			let splitTimeOfDayOriginal: TimeOfDay | "" = this.values.timeOfDay || "morning";
+			new Setting(splitPanel)
+				.setName("Time of Day (this one)")
+				.addDropdown((dd) => {
+					dd.addOption("", "— None —");
+					dd.addOption("morning", "Morning");
+					dd.addOption("midday", "Mid-day");
+					dd.addOption("evening", "Evening");
+					dd.setValue(splitTimeOfDayOriginal);
+					dd.onChange((v) => {
+						splitTimeOfDayOriginal = v as TimeOfDay | "";
+					});
+				});
+
+			let splitTimeOfDayCopy: TimeOfDay | "" = "evening";
+			new Setting(splitPanel)
+				.setName("Time of Day (the copy)")
+				.addDropdown((dd) => {
+					dd.addOption("", "— None —");
+					dd.addOption("morning", "Morning");
+					dd.addOption("midday", "Mid-day");
+					dd.addOption("evening", "Evening");
+					dd.setValue(splitTimeOfDayCopy);
+					dd.onChange((v) => {
+						splitTimeOfDayCopy = v as TimeOfDay | "";
+					});
+				});
+
+			const splitBtn = splitPanel.createEl("button", { text: "Create split", cls: "mod-cta" });
+			splitBtn.type = "button";
+			splitBtn.onclick = async () => {
+				if (this.isNew && !this.validateRequiredFields()) return;
+				const copyTrigger = splitTriggerEl.value.trim();
+				if (!copyTrigger) {
+					new Notice('Fill out "New Trigger for the copy" first.');
+					return;
+				}
+				if (splitTimeOfDayOriginal === splitTimeOfDayCopy) {
+					new Notice("Time of Day for this one and the copy must be different.");
+					return;
+				}
+				const originalValues: HabitFormValues = { ...this.values, timeOfDay: splitTimeOfDayOriginal };
+				const copyValues: HabitFormValues = { ...this.values, timeOfDay: splitTimeOfDayCopy, stackedAfter: copyTrigger };
+				await this.opts.onSplit!(originalValues, copyValues);
+				this.close();
+			};
+
+			splitToggle.onclick = () => {
+				splitPanel.toggleClass("habit-tracker-split-panel-visible", !splitPanel.hasClass("habit-tracker-split-panel-visible"));
+			};
+		}
 
 		applyKindVisibility();
 
@@ -1567,15 +1581,19 @@ class HabitFormModal extends Modal {
 		this.commitLabelTextEl.setText(`I commit to ${verb} this habit`);
 	}
 
-	submit() {
+	// Shared by submit() (always) and the Split panel's confirm handler (only
+	// when this.isNew — an existing habit being edited gets no extra gate
+	// beyond what editing already requires). Shows the same Notice submit()
+	// always has on failure; returns whether validation passed.
+	validateRequiredFields(): boolean {
 		if (!this.values.name.trim()) {
 			new Notice(this.values.kind === "task" ? "Task needs a name." : "Habit needs a name.");
-			return;
+			return false;
 		}
 		const isTask = this.values.kind === "task";
 		if (isTask && !this.values.scheduledDate) {
 			new Notice("Pick a scheduled date for this task.");
-			return;
+			return false;
 		}
 		if (this.isNew) {
 			const verb = isTask ? "completing" : this.values.type === "break" ? "breaking" : "building";
@@ -1583,18 +1601,23 @@ class HabitFormModal extends Modal {
 			for (const key of [...FORMULA_KEYS, ...OTHER_LEVER_KEYS]) {
 				if (!this.values[key].trim()) {
 					new Notice(`Fill out "${LEVER_LABELS[key]}" — ${LEVER_HELP_REASON[key]}, which will help you with ${verb} ${subject}.`);
-					return;
+					return false;
 				}
 			}
 			if (!this.values.linkedGoal.trim()) {
 				new Notice(`Pick a "${LEVER_LABELS.linkedGoal}" — ${LEVER_HELP_REASON.linkedGoal}, which will help you with ${verb} ${subject}.`);
-				return;
+				return false;
 			}
 			if (!this.commitChecked) {
 				new Notice(`Check "I commit to ${verb} ${subject}" to continue.`);
-				return;
+				return false;
 			}
 		}
+		return true;
+	}
+
+	submit() {
+		if (!this.validateRequiredFields()) return;
 		const name = this.values.name.trim();
 		this.opts.onSubmit({
 			...this.values,
@@ -2266,10 +2289,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					alarmEnabled: values.kind === "task" ? undefined : values.alarmEnabled,
 					alarmTime: values.kind === "task" ? undefined : values.alarmTime,
 					alarmRepeatMinutes: values.kind === "task" ? undefined : values.alarmRepeatMinutes,
-					twiceDaily: values.kind === "task" ? undefined : values.twiceDaily,
-					alarmEnabled2: values.kind === "task" ? undefined : values.alarmEnabled2,
-					alarmTime2: values.kind === "task" ? undefined : values.alarmTime2,
-					alarmRepeatMinutes2: values.kind === "task" ? undefined : values.alarmRepeatMinutes2,
+					timeOfDay: values.kind === "task" ? undefined : (values.timeOfDay || undefined),
 					stackedAfter: values.stackedAfter || undefined,
 					craving: values.craving || undefined,
 					minimumVersion: values.minimumVersion || undefined,
@@ -2282,6 +2302,37 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.plugin.data.hasCreatedFirstHabit = true;
 				await this.plugin.persist();
 				this.plugin.refreshAll();
+			},
+			onSplit: async (originalValues, copyValues) => {
+				// Mint both ids up front — see the "-copy-" infix note below,
+				// this is not cosmetic.
+				const originalId = slugify(originalValues.name) + "-" + Date.now();
+				// The copy's `name` is unchanged from the original by design
+				// (only Time of Day differs), so without the "-copy-" infix
+				// both ids would be minted from the identical slugified name
+				// within the same JS millisecond in this same handler — a
+				// real, likely collision that would silently overwrite one
+				// habit's `entries` map with the other's.
+				const copyId = slugify(copyValues.name) + "-copy-" + Date.now();
+				const originalHabit: HabitDefinition = {
+					id: originalId,
+					createdAt: todayStr(),
+					kind: "habit",
+					...habitFieldsFromFormValues(originalValues),
+				};
+				const copyHabit: HabitDefinition = {
+					id: copyId,
+					createdAt: todayStr(),
+					kind: "habit",
+					...habitFieldsFromFormValues(copyValues),
+				};
+				this.plugin.data.habits.push(originalHabit, copyHabit);
+				this.plugin.data.entries[originalId] = {};
+				this.plugin.data.entries[copyId] = {};
+				this.plugin.data.hasCreatedFirstHabit = true;
+				await this.plugin.persist();
+				this.plugin.refreshAll();
+				new Notice(`Split into "${habitDisplayName(originalHabit)}" and "${habitDisplayName(copyHabit)}".`);
 			},
 		}).open();
 	}
@@ -2355,7 +2406,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const scopeSelect = resetForm.createEl("select", { cls: "dropdown habit-tracker-reset-scope" });
 		scopeSelect.createEl("option", { text: "All habits", value: "__all__" });
 		for (const h of this.plugin.data.habits) {
-			scopeSelect.createEl("option", { text: h.name, value: h.id });
+			scopeSelect.createEl("option", { text: habitDisplayName(h), value: h.id });
 		}
 
 		resetForm.createEl("p", {
@@ -2384,7 +2435,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				new Notice("Reset check-in history for all habits.");
 			} else {
 				this.plugin.data.entries[scope] = {};
-				const habitName = this.plugin.data.habits.find((h) => h.id === scope)?.name ?? "that habit";
+				const habitForScope = this.plugin.data.habits.find((h) => h.id === scope);
+				const habitName = habitForScope ? habitDisplayName(habitForScope) : "that habit";
 				new Notice(`Reset check-in history for "${habitName}".`);
 			}
 			await this.plugin.persist();
@@ -2520,7 +2572,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const titleRow = header.createDiv({ cls: "habit-tracker-title-row" });
 		const dot = titleRow.createSpan({ cls: "habit-tracker-dot" });
 		dot.style.backgroundColor = habit.color;
-		titleRow.createSpan({ text: habit.name, cls: "habit-tracker-name" });
+		titleRow.createSpan({ text: habitDisplayName(habit), cls: "habit-tracker-name" });
 		titleRow.createSpan({
 			text: isBreak ? "BREAK" : "BUILD",
 			cls: "habit-tracker-type-badge" + (isBreak ? " habit-tracker-type-badge-break" : " habit-tracker-type-badge-build"),
@@ -2548,16 +2600,6 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const totalPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
 		totalPill.createSpan({ text: `${stats.total}`, cls: "habit-tracker-pill-value" });
 		totalPill.createSpan({ text: "votes", cls: "habit-tracker-pill-label" });
-
-		// Twice Daily habits can rack up 2 occurrences on the same day, which
-		// "votes" (a day-with-any-completion count) can't reflect — only show
-		// this pill when it would actually say something votes doesn't.
-		if (stats.totalOccurrences !== stats.total) {
-			const occurrencesPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
-			occurrencesPill.createSpan({ text: "✅", cls: "habit-tracker-pill-icon" });
-			occurrencesPill.createSpan({ text: `${stats.totalOccurrences}`, cls: "habit-tracker-pill-value" });
-			occurrencesPill.createSpan({ text: "completions", cls: "habit-tracker-pill-label" });
-		}
 
 		const yearPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
 		yearPill.createSpan({ text: `${stats.totalThisYear}`, cls: "habit-tracker-pill-value" });
@@ -2591,10 +2633,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					habit.alarmEnabled = values.kind === "task" ? undefined : values.alarmEnabled;
 					habit.alarmTime = values.kind === "task" ? undefined : values.alarmTime;
 					habit.alarmRepeatMinutes = values.kind === "task" ? undefined : values.alarmRepeatMinutes;
-					habit.twiceDaily = values.kind === "task" ? undefined : values.twiceDaily;
-					habit.alarmEnabled2 = values.kind === "task" ? undefined : values.alarmEnabled2;
-					habit.alarmTime2 = values.kind === "task" ? undefined : values.alarmTime2;
-					habit.alarmRepeatMinutes2 = values.kind === "task" ? undefined : values.alarmRepeatMinutes2;
+					habit.timeOfDay = values.kind === "task" ? undefined : (values.timeOfDay || undefined);
 					habit.stackedAfter = values.stackedAfter || undefined;
 					habit.craving = values.craving || undefined;
 					habit.minimumVersion = values.minimumVersion || undefined;
@@ -2604,13 +2643,32 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					await this.plugin.persist();
 					this.plugin.refreshAll();
 				},
+				onSplit: async (originalValues, copyValues) => {
+					Object.assign(habit, habitFieldsFromFormValues(originalValues));
+					// The copy's `name` is unchanged from the original by
+					// design (only Time of Day differs) — the "-copy-" infix
+					// avoids colliding with an id minted from the same
+					// slugified name at the same millisecond elsewhere.
+					const copyId = slugify(copyValues.name) + "-copy-" + Date.now();
+					const copyHabit: HabitDefinition = {
+						id: copyId,
+						createdAt: todayStr(),
+						kind: "habit",
+						...habitFieldsFromFormValues(copyValues),
+					};
+					this.plugin.data.habits.push(copyHabit);
+					this.plugin.data.entries[copyId] = {};
+					await this.plugin.persist();
+					this.plugin.refreshAll();
+					new Notice(`Split into "${habitDisplayName(habit)}" and "${habitDisplayName(copyHabit)}".`);
+				},
 			}).open();
 		};
 
 		const deleteBtn = actionsRow.createSpan({ text: "🗑", cls: "habit-tracker-delete-btn" });
 		deleteBtn.setAttr("aria-label", "Delete habit");
 		deleteBtn.onclick = () => {
-			new ConfirmDeleteModal(this.plugin.app, habit.name, async () => {
+			new ConfirmDeleteModal(this.plugin.app, habitDisplayName(habit), async () => {
 				this.plugin.data.habits = this.plugin.data.habits.filter((h) => h.id !== habit.id);
 				delete this.plugin.data.entries[habit.id];
 				this.yearScrollByHabit.delete(habit.id);
@@ -2828,30 +2886,14 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.setAttr("aria-label", dateStr);
 		}
 
-		// Twice Daily habits can rack up more than one completion on a given
-		// day (morning + evening) — a small tally mark under the day number
-		// makes that count visible at a glance instead of the cell just
-		// reading "done" either way. Regular habits are always 0 or 1 per
-		// day, which the cell's own done/not-done color already conveys, so
-		// no tally element is created for them at all.
-		let tallyEl: HTMLElement | undefined;
 		if (style === "week") {
 			cell.createDiv({ text: d.toLocaleString("default", { weekday: "short" }), cls: "habit-tracker-week-day-label" });
 			cell.createDiv({ text: "" + d.getDate(), cls: "habit-tracker-week-date-label" });
-			if (habit.twiceDaily) tallyEl = cell.createDiv({ cls: "habit-tracker-cell-tally" });
 		} else if (style === "month") {
 			cell.createDiv({ text: "" + d.getDate(), cls: "habit-tracker-week-date-label" });
-			if (habit.twiceDaily) tallyEl = cell.createDiv({ cls: "habit-tracker-cell-tally" });
 		} else {
 			cell.createSpan({ text: "" + (dayNumberOverride ?? d.getDate()), cls: "habit-tracker-cell-daynum" });
-			if (habit.twiceDaily) tallyEl = cell.createSpan({ cls: "habit-tracker-cell-tally" });
 		}
-		const updateTally = (v: EntryValue | undefined) => {
-			if (!tallyEl) return;
-			const count = v === undefined ? 0 : occurrenceCount(v);
-			tallyEl.setText(count > 0 ? "❙".repeat(count) : "");
-		};
-		updateTally(entries[dateStr]);
 
 		const futureCls = boxed ? "habit-tracker-week-cell-future" : "habit-tracker-cell-future";
 		const doneCls = boxed ? "habit-tracker-week-cell-done" : "habit-tracker-cell-done";
@@ -2866,9 +2908,6 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.style.backgroundColor = habit.color;
 			if (entries[dateStr] === "min") {
 				cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
-			}
-			if (isPartialOccurrence(entries[dateStr])) {
-				cell.addClass(boxed ? "habit-tracker-week-cell-partial" : "habit-tracker-cell-partial");
 			}
 		} else if (dateStr < todayStr()) {
 			// A day strictly before today with no entry — visibly greyed out
@@ -2886,13 +2925,12 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 		cell.onclick = async () => {
 			const oldStreak = computeStats(entries).streak;
-			const next = habit.twiceDaily ? nextEntryValueTwiceDaily(entries[dateStr]) : nextEntryValue(entries[dateStr]);
+			const next = nextEntryValue(entries[dateStr]);
 			if (next === undefined) {
 				delete entries[dateStr];
 			} else {
 				entries[dateStr] = next;
 			}
-			updateTally(next);
 			await this.plugin.persist();
 			if (!next) {
 				// Clearing a day isn't a reward moment — refresh immediately.
@@ -2906,8 +2944,6 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.style.backgroundColor = habit.color;
 			cell.addClass(doneCls);
 			if (next === "min") cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
-			cell.removeClass(boxed ? "habit-tracker-week-cell-partial" : "habit-tracker-cell-partial");
-			if (isPartialOccurrence(next)) cell.addClass(boxed ? "habit-tracker-week-cell-partial" : "habit-tracker-cell-partial");
 			cell.addClass("habit-tracker-cell-pop");
 			const newStreak = computeStats(entries).streak;
 			if (this.plugin.settings.celebrationEffectsEnabled) {
@@ -3120,33 +3156,18 @@ export default class HabitTrackerPlugin extends Plugin {
 
 		for (const habit of this.data.habits) {
 			if (habit.kind === "task") continue;
+			if (!habit.alarmEnabled || !habit.alarmTime) continue;
+			if (nowStr < habit.alarmTime) continue;
+			if (this.data.entries[habit.id]?.[today]) continue;
 
-			// Twice Daily habits get two independent alarm slots (Morning ==
-			// the existing alarmEnabled/alarmTime/alarmRepeatMinutes fields,
-			// Evening == the new *2 fields); everyone else keeps exactly one
-			// slot with today's behavior (empty label, no map-key suffix).
-			const slots = habit.twiceDaily
-				? [
-						{ enabled: habit.alarmEnabled, time: habit.alarmTime, repeatMinutes: habit.alarmRepeatMinutes, occurrence: "morning" as const, keySuffix: "", label: " (Morning)" },
-						{ enabled: habit.alarmEnabled2, time: habit.alarmTime2, repeatMinutes: habit.alarmRepeatMinutes2, occurrence: "evening" as const, keySuffix: ":evening", label: " (Evening)" },
-				  ]
-				: [{ enabled: habit.alarmEnabled, time: habit.alarmTime, repeatMinutes: habit.alarmRepeatMinutes, occurrence: "morning" as const, keySuffix: "", label: "" }];
+			const repeatMinutes = habit.alarmRepeatMinutes && habit.alarmRepeatMinutes > 0 ? habit.alarmRepeatMinutes : 10;
+			const lastFired = this.habitAlarmLastFiredAt.get(habit.id);
+			if (lastFired !== undefined && nowMs - lastFired < repeatMinutes * 60000) continue;
 
-			for (const slot of slots) {
-				if (!slot.enabled || !slot.time) continue;
-				if (nowStr < slot.time) continue;
-				if (occurrenceDone(this.data.entries[habit.id], today, slot.occurrence)) continue;
-
-				const repeatMinutes = slot.repeatMinutes && slot.repeatMinutes > 0 ? slot.repeatMinutes : 10;
-				const mapKey = habit.id + slot.keySuffix;
-				const lastFired = this.habitAlarmLastFiredAt.get(mapKey);
-				if (lastFired !== undefined && nowMs - lastFired < repeatMinutes * 60000) continue;
-
-				this.habitAlarmLastFiredAt.set(mapKey, nowMs);
-				playAlarmChime();
-				const notice = new Notice(`⏰ "${habit.name}"${slot.label} not checked in yet`, 15000);
-				notice.noticeEl.addClass("habit-tracker-alarm-notice");
-			}
+			this.habitAlarmLastFiredAt.set(habit.id, nowMs);
+			playAlarmChime();
+			const notice = new Notice(`⏰ "${habitDisplayName(habit)}" not checked in yet`, 15000);
+			notice.noticeEl.addClass("habit-tracker-alarm-notice");
 		}
 
 		for (const alarm of this.settings.lastCallAlarms) {
@@ -3359,7 +3380,7 @@ export default class HabitTrackerPlugin extends Plugin {
 		for (const m of this.sortedMilestones()) {
 			if (oldStreak < m && newStreak >= m) {
 				const label = habit.type === "break" ? "clean streak" : "day streak";
-				new Notice(`🎉 ${newStreak}-${label} on "${habit.name}"! Keep going.`);
+				new Notice(`🎉 ${newStreak}-${label} on "${habitDisplayName(habit)}"! Keep going.`);
 				// The toast fades and is easy to miss — echo the milestone as
 				// a brief glow directly on the streak pill it's about, plus a
 				// bigger falling-confetti burst across the whole card, so

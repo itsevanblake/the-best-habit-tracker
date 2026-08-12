@@ -697,28 +697,6 @@ body.theme-dark {
 	color: var(--habit-color-contrast, var(--text-on-accent));
 }
 
-/* Twice Daily's per-day completion count (1 or 2 occurrences), rendered as
-   small tally strokes directly under the day number. Only ever created for
-   Twice Daily habits — see renderCell's tallyEl — so regular habits (always
-   0 or 1 per day, already conveyed by the cell's own done/not-done color)
-   never get this element at all. Empty text when the count is 0 keeps the
-   cell's layout stable rather than shifting the day number as marks
-   appear/disappear. */
-.habit-tracker-cell-tally {
-	font-size: 0.6em;
-	line-height: 1;
-	letter-spacing: 1px;
-	color: var(--text-faint);
-	pointer-events: none;
-	user-select: none;
-	min-height: 0.6em;
-}
-
-.habit-tracker-cell-done .habit-tracker-cell-tally {
-	color: var(--habit-color-contrast, var(--text-on-accent));
-	opacity: 0.85;
-}
-
 .habit-tracker-cell:hover {
 	outline: 2px solid var(--text-muted);
 	filter: brightness(1.15);
@@ -902,11 +880,6 @@ body.theme-dark {
 	font-size: 0.6em;
 }
 
-.habit-tracker-yeardays-cell .habit-tracker-cell-tally {
-	font-size: 0.5em;
-	min-height: 0.5em;
-}
-
 /* A past day with no entry — a clearly greyed-out fill (the full,
    unmixed border color, not the ~65% tint every cell gets by default) so
    a gap in the streak actually reads at a glance instead of blending into
@@ -924,16 +897,6 @@ body.theme-dark {
    between "showed up minimally" and "did the full habit" doesn't rely on
    opacity/color alone (also reads for colorblind users). */
 .habit-tracker-cell-min {
-	opacity: 0.55;
-	outline: 1px dashed var(--habit-color, var(--text-muted));
-	outline-offset: -1px;
-}
-
-/* Twice Daily habit with exactly one occurrence (morning/evening) done —
-   kept as its own class rather than reusing -min since "minimum version"
-   and "partial occurrence" are unrelated concepts that just happen to look
-   alike, not because the CSS itself differs. */
-.habit-tracker-cell-partial {
 	opacity: 0.55;
 	outline: 1px dashed var(--habit-color, var(--text-muted));
 	outline-offset: -1px;
@@ -990,12 +953,6 @@ body.theme-dark {
 }
 
 .habit-tracker-week-cell-min {
-	opacity: 0.6;
-	outline: 2px dashed var(--habit-color, var(--text-muted));
-	outline-offset: -2px;
-}
-
-.habit-tracker-week-cell-partial {
 	opacity: 0.6;
 	outline: 2px dashed var(--habit-color, var(--text-muted));
 	outline-offset: -2px;
@@ -1295,6 +1252,33 @@ body.theme-dark {
 .habit-tracker-fourlaws-row p {
 	margin: 4px 0 0;
 	color: var(--text-muted);
+}
+
+/* Split-into-two-occurrences toggle/panel — same hidden-until-clicked
+   pattern as the Four Laws toggle/box above, just a separate class pair
+   since it's a distinct feature, not a variant of that one. */
+.habit-tracker-split-toggle {
+	font-size: 0.8em;
+	color: var(--text-accent);
+	cursor: pointer;
+	margin-bottom: 10px;
+	width: fit-content;
+}
+
+.habit-tracker-split-toggle:hover {
+	text-decoration: underline;
+}
+
+.habit-tracker-split-panel {
+	display: none;
+	margin-bottom: 14px;
+	padding: 10px 12px;
+	border-radius: var(--ht-radius-lg);
+	background-color: var(--background-secondary);
+}
+
+.habit-tracker-split-panel-visible {
+	display: block;
 }
 
 .habit-tracker-swatch-row {
