@@ -2041,6 +2041,20 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	// pointing at the "+ Add habit" card, waiting for the user to click it
 	// before the actual form walkthrough begins.
 	pendingWalkthroughIntro = false;
+	// Same in-memory-only pattern as currentView/selectedMonthOffset/etc
+	// above — whether this block is currently in drag-to-reorder mode.
+	// Resets to false on every fresh block load, never persisted.
+	reorderModeActive: boolean = false;
+	// Id of the habit currently being dragged, while a drag gesture is in
+	// progress. Kept as plain block-level state rather than round-tripping
+	// through event.dataTransfer.getData() on dragover/drop — Obsidian's
+	// Electron/Chromium webview supports dataTransfer fine, but since this
+	// is always a same-page, same-block reorder (never a drag to/from
+	// outside the app), a plain instance field is simpler and avoids any
+	// dependency on dataTransfer's read-during-dragover quirks (some
+	// browsers only expose custom data types on `drop`, not `dragover`,
+	// which would break the live drop-indicator).
+	draggedHabitId: string | null = null;
 
 	constructor(
 		containerEl: HTMLElement,
@@ -2216,6 +2230,17 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 
 		if (!this.filterName) {
+			const reorderBtn = toggleRow.createEl("button", {
+				text: "⠿ Reorder",
+				cls: "habit-tracker-reorder-btn" + (this.reorderModeActive ? " habit-tracker-reorder-btn-active" : ""),
+			});
+			reorderBtn.type = "button";
+			reorderBtn.setAttr("aria-label", this.reorderModeActive ? "Exit reorder mode" : "Reorder habits");
+			reorderBtn.onclick = () => {
+				this.reorderModeActive = !this.reorderModeActive;
+				this.render();
+			};
+
 			const gearBtn = toggleRow.createEl("button", { text: "⚙️", cls: "habit-tracker-gear-btn" });
 			gearBtn.type = "button";
 			gearBtn.setAttr("aria-label", "Settings");
@@ -2568,8 +2593,17 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		card.style.setProperty("--habit-color-contrast", contrastColor(habit.color));
 		const isBreak = habit.type === "break";
 
+		if (this.reorderModeActive) {
+			card.addClass("habit-tracker-habit-reorderable");
+			card.draggable = true;
+			this.attachReorderHandlers(card, habit);
+		}
+
 		const header = card.createDiv({ cls: "habit-tracker-header" });
 		const titleRow = header.createDiv({ cls: "habit-tracker-title-row" });
+		if (this.reorderModeActive) {
+			titleRow.createSpan({ text: "⠿", cls: "habit-tracker-drag-handle" });
+		}
 		const dot = titleRow.createSpan({ cls: "habit-tracker-dot" });
 		dot.style.backgroundColor = habit.color;
 		titleRow.createSpan({ text: habitDisplayName(habit), cls: "habit-tracker-name" });
@@ -2612,9 +2646,18 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		// .habit-tracker-actions for the flex-shrink:0 + wrap handling.
 		const actionsRow = header.createDiv({ cls: "habit-tracker-actions" });
 
-		const editBtn = actionsRow.createSpan({ text: "✏️", cls: "habit-tracker-edit-btn" });
+		const editBtn = actionsRow.createSpan({
+			text: "✏️",
+			cls: "habit-tracker-edit-btn" + (this.reorderModeActive ? " habit-tracker-action-btn-disabled" : ""),
+		});
 		editBtn.setAttr("aria-label", "Edit habit");
 		editBtn.onclick = () => {
+			// Editing/deleting mid-drag is confusing (the array index the
+			// click was aimed at can shift under a pending drag), so both
+			// actions are simply no-ops while reorder mode is active — same
+			// pattern as the grid cells below, rather than removing the
+			// buttons entirely (keeps the layout stable while toggling).
+			if (this.reorderModeActive) return;
 			new HabitFormModal(this.plugin.app, this.plugin, {
 				title: "Edit habit",
 				submitLabel: "Save",
@@ -2665,9 +2708,13 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			}).open();
 		};
 
-		const deleteBtn = actionsRow.createSpan({ text: "🗑", cls: "habit-tracker-delete-btn" });
+		const deleteBtn = actionsRow.createSpan({
+			text: "🗑",
+			cls: "habit-tracker-delete-btn" + (this.reorderModeActive ? " habit-tracker-action-btn-disabled" : ""),
+		});
 		deleteBtn.setAttr("aria-label", "Delete habit");
 		deleteBtn.onclick = () => {
+			if (this.reorderModeActive) return;
 			new ConfirmDeleteModal(this.plugin.app, habitDisplayName(habit), async () => {
 				this.plugin.data.habits = this.plugin.data.habits.filter((h) => h.id !== habit.id);
 				delete this.plugin.data.entries[habit.id];
@@ -2739,6 +2786,81 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		} else {
 			this.renderYearGrid(grid, habit, entries, this.selectedYearOffset);
 		}
+	}
+
+	// Vanilla HTML5 drag-and-drop wiring for one reorderable habit card.
+	// Only ever called when this.reorderModeActive is true (see
+	// renderHabit above) — cards behave exactly as before when it's off.
+	attachReorderHandlers(card: HTMLElement, habit: HabitDefinition) {
+		card.addEventListener("dragstart", (event: DragEvent) => {
+			this.draggedHabitId = habit.id;
+			card.addClass("habit-tracker-habit-dragging");
+			if (event.dataTransfer) {
+				event.dataTransfer.effectAllowed = "move";
+				// Best-effort only — the actual reorder logic relies on
+				// this.draggedHabitId (see comment on that field above),
+				// not on reading this back out on drop.
+				event.dataTransfer.setData("text/plain", habit.id);
+			}
+		});
+
+		card.addEventListener("dragover", (event: DragEvent) => {
+			if (!this.draggedHabitId || this.draggedHabitId === habit.id) return;
+			event.preventDefault();
+			if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+			const rect = card.getBoundingClientRect();
+			const isAbove = event.clientY - rect.top < rect.height / 2;
+			card.toggleClass("habit-tracker-habit-drop-above", isAbove);
+			card.toggleClass("habit-tracker-habit-drop-below", !isAbove);
+		});
+
+		card.addEventListener("dragleave", () => {
+			card.removeClass("habit-tracker-habit-drop-above");
+			card.removeClass("habit-tracker-habit-drop-below");
+		});
+
+		card.addEventListener("drop", async (event: DragEvent) => {
+			event.preventDefault();
+			const droppedAbove = card.hasClass("habit-tracker-habit-drop-above");
+			card.removeClass("habit-tracker-habit-drop-above");
+			card.removeClass("habit-tracker-habit-drop-below");
+
+			const draggedId = this.draggedHabitId;
+			this.draggedHabitId = null;
+			if (!draggedId || draggedId === habit.id) return;
+
+			const habits = this.plugin.data.habits;
+			const fromIndex = habits.findIndex((h) => h.id === draggedId);
+			if (fromIndex === -1) return;
+
+			const [moved] = habits.splice(fromIndex, 1);
+			// Re-find the target's index after the splice above, since
+			// removing an earlier element shifts every later index down by
+			// one — inserting at the stale index would land one slot off
+			// whenever the drag moved a card downward.
+			let insertAt = habits.findIndex((h) => h.id === habit.id);
+			if (insertAt === -1) insertAt = habits.length;
+			if (!droppedAbove) insertAt += 1;
+
+			// No-op guard: dropping a card back into the exact slot it came
+			// from (e.g. dropped on itself's old neighbor with no real
+			// order change) skips persist/refresh entirely.
+			if (insertAt === fromIndex) {
+				habits.splice(fromIndex, 0, moved);
+				return;
+			}
+
+			habits.splice(insertAt, 0, moved);
+			await this.plugin.persist();
+			this.plugin.refreshAll();
+		});
+
+		card.addEventListener("dragend", () => {
+			this.draggedHabitId = null;
+			card.removeClass("habit-tracker-habit-dragging");
+			card.removeClass("habit-tracker-habit-drop-above");
+			card.removeClass("habit-tracker-habit-drop-below");
+		});
 	}
 
 	renderYearGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>, yearOffset: number = 0) {
@@ -2923,6 +3045,13 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				cell.addClass("habit-tracker-cell-at-risk");
 			}
 		}
+		// While reorder mode is active, cell click-to-toggle is disabled
+		// entirely (no handler attached, not just a no-op) so a drag
+		// gesture starting/ending over a cell can never accidentally
+		// register as a habit check-in. The card-level
+		// habit-tracker-habit-reorderable class (styles.css) gives the
+		// whole grid a dimmed, non-interactive look to match.
+		if (this.reorderModeActive) return;
 		cell.onclick = async () => {
 			const oldStreak = computeStats(entries).streak;
 			const next = nextEntryValue(entries[dateStr]);

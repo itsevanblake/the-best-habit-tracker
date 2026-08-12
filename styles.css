@@ -1898,3 +1898,95 @@ body.is-mobile .habit-tracker-actions {
 	font-weight: 500;
 	font-size: 0.85em;
 }
+
+/* ---- Drag-to-reorder habit cards ----
+   Toggled on by the "⠿ Reorder" button beside the gear icon (toggleRow).
+   Mirrors .habit-tracker-gear-btn's icon-button sizing/shape, with an
+   active-state treatment mirroring .habit-tracker-view-btn-active. */
+
+.habit-tracker-reorder-btn {
+	flex-shrink: 0;
+	height: 30px;
+	padding: 0 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--ht-radius-md);
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 0.78em;
+	font-weight: 500;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.habit-tracker-reorder-btn:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+}
+
+.habit-tracker-reorder-btn-active,
+.habit-tracker-reorder-btn-active:hover {
+	background-color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+/* Card affordance while reorder mode is on: draggable, dashed outline
+   instead of the normal solid border, grab cursor everywhere on the card
+   except explicitly-disabled controls (edit/delete, below). */
+.habit-tracker-habit-reorderable {
+	cursor: grab;
+	border-style: dashed;
+	border-color: var(--habit-color, var(--interactive-accent));
+}
+
+.habit-tracker-habit-reorderable:active {
+	cursor: grabbing;
+}
+
+.habit-tracker-drag-handle {
+	flex-shrink: 0;
+	cursor: grab;
+	color: var(--text-muted);
+	font-size: 1.1em;
+	line-height: 1;
+}
+
+/* Dragged card: dimmed so the drop target underneath reads clearly. */
+.habit-tracker-habit-dragging {
+	opacity: 0.4;
+}
+
+/* Drop-position indicator on the card currently being dragged over — a
+   thick accent line on whichever edge the dragged card would land next
+   to, computed in attachReorderHandlers' dragover handler from cursor Y
+   position within the hovered card's bounding rect. */
+.habit-tracker-habit-drop-above {
+	box-shadow: inset 0 3px 0 0 var(--interactive-accent);
+}
+
+.habit-tracker-habit-drop-below {
+	box-shadow: inset 0 -3px 0 0 var(--interactive-accent);
+}
+
+/* Cell click-to-toggle is unattached entirely in JS while reorder mode is
+   active (see HabitTrackerBlock.renderCell) — this just gives the grid a
+   matching "not interactive right now" look so that's visually obvious
+   too, without touching the card's own edit/delete buttons which get
+   their own explicit disabled treatment below. */
+.habit-tracker-habit-reorderable .habit-tracker-grid-wrap {
+	opacity: 0.55;
+	pointer-events: none;
+}
+
+/* Edit/delete buttons during reorder mode: dimmed and inert (their click
+   handlers are also no-ops, see renderHabit) rather than removed, so the
+   header layout doesn't jump around when reorder mode is toggled. */
+.habit-tracker-action-btn-disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+	pointer-events: none;
+}
