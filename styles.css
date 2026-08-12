@@ -47,12 +47,63 @@ body.theme-dark {
 	--htx-gold-bright: #fde68a;
 	--htx-red: #f87171;
 	--htx-card: #150d29;
-	--htx-card-border: color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
 	--htx-text: #f3ecff;
 	--htx-text-muted: #b7a9d9;
 	--htx-text-faint: #8574ad;
-	--htx-font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	--htx-font-display: "Bahnschrift", "Avenir Next Condensed", "Futura", "Segoe UI", system-ui, sans-serif;
 	--htx-font-body: "DM Sans", "Segoe UI", system-ui, sans-serif;
+
+	/* ---- Design Tweaks knobs ----
+	   Every value below is overwritable at runtime by the Design Tweaks
+	   panel (see TWEAK_SPEC in main.ts), which writes these same custom
+	   properties inline onto .habit-tracker-root. Declared here so the
+	   shipped design works untouched, and so each knob has exactly one
+	   documented default. Keep these in sync with each TweakDef's `def`. */
+	--htx-border-pct: 30%;
+	--htx-glow-pct: 100%;
+	--htx-shadow-pct: 100%;
+	--htx-motion-pct: 100%;
+	--htx-root-size: 1.1em;
+	--htx-name-size: 1.15em;
+	--htx-name-weight: 700;
+	--htx-pill-size: 0.74em;
+	--htx-num-weight: 700;
+	--htx-tracking: 0.03em;
+	--htx-radius-base: 12px;
+	--htx-card-pad: 20px;
+	--htx-card-gap: 16px;
+	--htx-panel-pad: 18px;
+	--htx-cell-size: 76px;
+	--htx-cell-gap: 8px;
+	--htx-cell-radius: 10px;
+	--htx-hairline: 1px;
+	--htx-bar-h: 2px;
+
+	/* Derived from the knobs above — everything downstream reads these, so
+	   a single slider moves every dependent surface at once. */
+	--htx-card-border: color-mix(in srgb, var(--htx-glow-violet) var(--htx-border-pct), transparent);
+	--htx-glow-a: calc(var(--htx-glow-pct) * 0.55);
+	--htx-shadow-a: calc(var(--htx-shadow-pct) * 0.45);
+	--htx-dur-fast: calc(120ms * 100 / max(var(--htx-motion-pct), 1));
+	--htx-dur-mid: calc(280ms * 100 / max(var(--htx-motion-pct), 1));
+	--htx-dur-slow: calc(1300ms * 100 / max(var(--htx-motion-pct), 1));
+
+	/* The radius scale is re-derived from the tweakable base so one slider
+	   moves every corner in proportion instead of flattening them all to
+	   the same value. Ratios match the shipped 4/6/10/12 scale. */
+	--ht-radius-sm: calc(var(--htx-radius-base) * 0.34);
+	--ht-radius-md: calc(var(--htx-radius-base) * 0.5);
+	--ht-radius-lg: calc(var(--htx-radius-base) * 0.84);
+	--ht-radius-xl: var(--htx-radius-base);
+}
+
+/* Motion knob at zero means "no animation at all", which a duration alone
+   can't express (a 0s animation still fires its end state instantly, but
+   infinite loops would still spin). */
+.habit-tracker-root[style*="--htx-motion-pct: 0%"] *,
+.habit-tracker-root[style*="--htx-motion-pct:0%"] * {
+	animation: none !important;
+	transition: none !important;
 }
 
 /* Break the tracker out of Obsidian's "Readable Line Length" column so it
@@ -68,20 +119,38 @@ body.theme-dark {
    the pane, not just the width inside that padding. --file-margins is
    Obsidian's own variable for this padding; the fallback keeps this a
    no-op if a given theme/version doesn't define it. */
+/* The panel is deliberately a fixed dark rendition in every Obsidian theme
+   (see the token block above), which means in a LIGHT-themed note it sits
+   as a dark rectangle on a white page. That's the committed decision — so
+   the edge has to read as an intentional inset instrument panel rather
+   than a hole punched in the page. The ring + outer glow + inset highlight
+   below do that work: a bright hairline along the top inner edge (light
+   catching a raised bezel), a soft violet bloom spilling outward onto the
+   host page so the panel looks lit rather than pasted, and a slightly
+   inset margin so it never runs flush into the note's own text column. */
 .habit-tracker-root {
 	position: relative;
-	margin: 1.2em calc(-1 * var(--file-margins, 0px));
-	padding: 18px 16px 16px;
+	margin: 1.6em calc(-1 * var(--file-margins, 0px) + 4px);
+	padding: var(--htx-panel-pad) calc(var(--htx-panel-pad) * 0.9) calc(var(--htx-panel-pad) * 0.9);
 	font-variant-numeric: tabular-nums;
-	font-size: 1.1em;
+	font-size: var(--htx-root-size);
 	font-family: var(--htx-font-body);
 	color: var(--htx-text);
 	background:
-		radial-gradient(ellipse 900px 420px at 20% -10%, color-mix(in srgb, var(--htx-glow-violet) 30%, transparent), transparent 65%),
 		radial-gradient(ellipse 700px 500px at 100% 100%, color-mix(in srgb, var(--htx-violet-soft) 22%, transparent), transparent 60%),
 		linear-gradient(180deg, var(--htx-bg-2), var(--htx-bg) 60%);
 	border-radius: var(--ht-radius-xl);
-	border: 1px solid var(--htx-card-border);
+	border: var(--htx-hairline) solid color-mix(in srgb, var(--htx-glow-violet) 45%, transparent);
+	box-shadow:
+		inset 0 1px 0 color-mix(in srgb, var(--htx-glow-violet-bright) 35%, transparent),
+		0 0 0 1px rgba(0, 0, 0, 0.4),
+		0 0 28px color-mix(in srgb, var(--htx-glow-violet) calc(var(--htx-glow-a) * 0.5), transparent),
+		0 10px 34px rgba(0, 0, 0, calc(var(--htx-shadow-a) / 100 * 0.66));
+}
+
+/* Panel wash off — flat ground, no radial haze behind the cards. */
+.habit-tracker-root.ht-no-panel-wash {
+	background: linear-gradient(180deg, var(--htx-bg-2), var(--htx-bg) 60%);
 }
 
 .habit-tracker-empty {
@@ -117,7 +186,7 @@ body.theme-dark {
 .habit-tracker-list {
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: var(--htx-card-gap);
 	/* No fade-in here (deliberately removed): render() rebuilds this element
 	   fresh on every check-in, including a plain mark/unmark, and the fade's
 	   opacity:0 start briefly exposed the near-black .habit-tracker-root
@@ -158,7 +227,8 @@ body.theme-dark {
 	padding: 0;
 	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 	border-radius: var(--ht-radius-md);
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-card));
+	background: transparent;
+	box-shadow: none;
 	cursor: pointer;
 	font-size: 0.95em;
 	display: flex;
@@ -168,7 +238,7 @@ body.theme-dark {
 }
 
 .habit-tracker-gear-btn:hover {
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 22%, var(--htx-card));
+	background: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
 	border-color: var(--htx-glow-violet-bright);
 }
 
@@ -198,7 +268,7 @@ body.theme-dark {
 
 .habit-tracker-settings-panel h4 {
 	margin: 0 0 var(--ht-space-3);
-	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	font-family: "Bahnschrift", "Avenir Next Condensed", "Futura", "Segoe UI", system-ui, sans-serif;
 	color: #f3ecff;
 }
 
@@ -301,16 +371,26 @@ body.theme-dark {
 	cursor: not-allowed;
 }
 
+/* ---- Toolbar chrome: ghost / outlined ----
+   Every control up here is a transparent shell with a violet hairline and
+   violet text — no fills. An earlier pass tinted them with ~8-12% violet
+   mixed into near-black, which is arithmetically violet but reads as flat
+   grey on screen; the fix is to remove the fill entirely and let the panel
+   show through rather than to chase a darker purple. The only filled thing
+   in the toolbar is the ACTIVE view segment, so selection is the one place
+   that draws the eye. `background: transparent` is stated explicitly on
+   each (rather than inherited) because Obsidian's own `button` rule sets a
+   grey `--interactive-normal` fill these would otherwise pick up. */
 .habit-tracker-walkthrough-btn {
 	font-size: 0.78em;
 	font-weight: 600;
 	padding: 5px 10px;
 	cursor: pointer;
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 12%, var(--htx-card));
+	background: transparent;
 	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 45%, transparent);
 	border-radius: var(--ht-radius-md);
 	color: var(--htx-glow-violet-bright);
-	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-glow-violet) 20%, transparent);
+	box-shadow: none;
 	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -328,9 +408,8 @@ body.theme-dark {
 
 .habit-tracker-walkthrough-btn:hover {
 	color: #f9f5ff;
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 32%, var(--htx-card));
+	background: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
 	border-color: var(--htx-glow-violet-bright);
-	box-shadow: 0 0 16px color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 }
 
 .habit-tracker-view-toggle {
@@ -344,12 +423,16 @@ body.theme-dark {
 	   already wraps around it, this just makes the control itself safe to
 	   wrap internally too. */
 	flex-wrap: wrap;
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 8%, var(--htx-card));
+	/* The container itself is now purely a layout wrapper — no fill, no
+	   border, no shadow. Each segment carries its own outline instead, so
+	   the control reads as a row of ghost pills rather than one grey slab
+	   with text on it. */
+	background: transparent;
+	border: none;
+	box-shadow: none;
 	border-radius: var(--ht-radius-lg);
-	padding: 3px;
-	gap: 2px;
-	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
-	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-glow-violet) 15%, transparent);
+	padding: 0;
+	gap: 4px;
 }
 
 .habit-tracker-view-btn {
@@ -358,25 +441,26 @@ body.theme-dark {
 	padding: 4px 12px;
 	cursor: pointer;
 	background: transparent;
-	border: none;
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 	border-radius: var(--ht-radius-md);
 	color: var(--htx-glow-violet-bright);
-	opacity: 0.75;
 	box-shadow: none;
-	transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+	transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
 .habit-tracker-view-btn:hover {
 	color: #f9f5ff;
-	opacity: 1;
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
+	border-color: var(--htx-glow-violet-bright);
+	background: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
 }
 
+/* The one filled control in the toolbar — selection is the only thing up
+   here that should pull the eye. */
 .habit-tracker-view-btn-active,
 .habit-tracker-view-btn-active:hover {
-	background: linear-gradient(135deg, var(--htx-glow-violet), var(--htx-violet-soft));
+	background: var(--htx-glow-violet);
+	border-color: var(--htx-glow-violet);
 	color: #f9f5ff;
-	opacity: 1;
 	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
 }
 
@@ -393,7 +477,8 @@ body.theme-dark {
 	padding: 0;
 	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 	border-radius: var(--ht-radius-md);
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-card));
+	background: transparent;
+	box-shadow: none;
 	color: var(--htx-glow-violet-bright);
 	cursor: pointer;
 	font-size: 0.75em;
@@ -404,9 +489,9 @@ body.theme-dark {
 }
 
 .habit-tracker-view-nav-btn:hover {
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 20%, var(--htx-card));
+	background: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
 	border-color: var(--htx-glow-violet-bright);
-	color: var(--htx-text);
+	color: #f9f5ff;
 }
 
 .habit-tracker-view-nav-label {
@@ -421,9 +506,10 @@ body.theme-dark {
 	flex-shrink: 0;
 	height: 26px;
 	padding: 0 10px;
-	border: 1px solid var(--htx-card-border);
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 	border-radius: var(--ht-radius-pill);
-	background-color: var(--htx-card);
+	background: transparent;
+	box-shadow: none;
 	color: var(--htx-glow-violet-bright);
 	cursor: pointer;
 	font-size: 0.72em;
@@ -432,31 +518,74 @@ body.theme-dark {
 }
 
 .habit-tracker-view-today-btn:hover {
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 20%, var(--htx-card));
+	background: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
 	border-color: var(--htx-glow-violet-bright);
 }
 
 /* ---- Habit card ---- */
 
+/* The habit's own color is real information (it's how you tell cards apart
+   at a glance, and it's the same hue its checked-in cells use), so it still
+   has to be legible on the card itself. It was previously a thick 4px
+   left-edge stripe — the single most recognizable AI-UI tell. Re-expressed
+   here as a hairline top-edge bar with a matching bloom below it: same
+   identity signal, more like a lit instrument bezel than a color-coded
+   sticky note. Implemented via ::before rather than a border so the card's
+   own 1px ring stays uniform on all four sides. */
 .habit-tracker-habit {
 	position: relative;
 	overflow: hidden;
-	border: 1px solid var(--htx-card-border);
+	border: var(--htx-hairline) solid var(--htx-card-border);
 	border-radius: var(--ht-radius-xl);
-	padding: 20px 22px 22px;
-	background:
-		radial-gradient(ellipse 320px 160px at 100% 0%, color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 20%, transparent), transparent 70%),
-		var(--htx-card);
-	border-left: 4px solid var(--habit-color, var(--htx-glow-violet));
-	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.45);
-	transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+	padding: var(--htx-card-pad) calc(var(--htx-card-pad) * 1.1) calc(var(--htx-card-pad) * 1.1);
+	/* Flat, single-tone card surface — deliberately no color wash. A radial
+	   bloom in the habit's color used to sit across the top edge here; it
+	   read as haze in the empty space beside the header rather than as
+	   identity, so it's gone. The habit's color still reads three other
+	   ways (the dot beside the name, the ::before top bar, and its own
+	   checked-in cells), which is enough without tinting the surface. */
+	background-color: var(--htx-card);
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, calc(var(--htx-shadow-a) / 100));
+	transition: box-shadow var(--htx-dur-fast) ease, border-color var(--htx-dur-fast) ease, transform var(--htx-dur-fast) ease;
+}
+
+.habit-tracker-habit::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: var(--htx-bar-h);
+	background: linear-gradient(
+		90deg,
+		transparent,
+		var(--habit-color, var(--htx-glow-violet)) 15%,
+		var(--habit-color, var(--htx-glow-violet)) 85%,
+		transparent
+	);
+	box-shadow: 0 0 12px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) var(--htx-glow-a), transparent);
+	pointer-events: none;
+}
+
+/* Identity bar modes (Design Tweaks → Effects → Card identity bar). */
+.habit-tracker-root.ht-bar-solid .habit-tracker-habit::before,
+.habit-tracker-root.ht-bar-solid .habit-tracker-task-row::before {
+	background: var(--habit-color, var(--htx-glow-violet));
+}
+
+.habit-tracker-root.ht-bar-off .habit-tracker-habit::before,
+.habit-tracker-root.ht-bar-off .habit-tracker-task-row::before {
+	display: none;
 }
 
 .habit-tracker-habit:hover {
 	box-shadow: 0 0 0 1px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 55%, transparent),
-		0 0 24px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 35%, transparent), 0 8px 24px rgba(0, 0, 0, 0.5);
+		0 0 24px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) calc(var(--htx-glow-a) * 0.64), transparent),
+		0 8px 24px rgba(0, 0, 0, calc(var(--htx-shadow-a) / 100 * 1.11));
 	border-color: color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 60%, transparent);
 	transform: translateY(-1px);
+}
+
+.habit-tracker-root.ht-no-hover-lift .habit-tracker-habit:hover {
+	transform: none;
 }
 
 .habit-tracker-header {
@@ -484,8 +613,8 @@ body.theme-dark {
 
 .habit-tracker-name {
 	font-family: var(--htx-font-display);
-	font-weight: 700;
-	font-size: 1.15em;
+	font-weight: var(--htx-name-weight);
+	font-size: var(--htx-name-size);
 	color: var(--htx-text);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -522,6 +651,21 @@ body.theme-dark {
 	min-width: 0;
 }
 
+/* The secondary row (best/week/month/year) sits below the header, visually
+   demoted relative to the primary streak+votes pills above — smaller, more
+   muted, so a daily glance lands on the two numbers that actually matter
+   and these stay a deliberate one-beat-later read rather than competing
+   for the same attention. */
+.habit-tracker-stats-row-secondary {
+	margin: -2px 0 8px;
+	opacity: 0.8;
+}
+
+.habit-tracker-stats-row-secondary .habit-tracker-pill {
+	padding: 3px 8px;
+	font-size: 0.68em;
+}
+
 /* Edit/delete: deliberately its own flex item, sibling to
    .habit-tracker-stats-row rather than nested inside it, so it never
    competes with however many stat pills happen to be rendered for room.
@@ -545,7 +689,7 @@ body.theme-dark {
 	border-radius: var(--ht-radius-pill);
 	background-color: color-mix(in srgb, var(--htx-glow-violet) 14%, var(--htx-bg-2));
 	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
-	font-size: 0.74em;
+	font-size: var(--htx-pill-size);
 	transition: box-shadow 0.15s ease;
 }
 
@@ -592,7 +736,7 @@ body.theme-dark {
 
 .habit-tracker-pill-value {
 	font-family: var(--htx-font-display);
-	font-weight: 700;
+	font-weight: var(--htx-num-weight);
 	color: var(--htx-text);
 }
 
@@ -603,7 +747,7 @@ body.theme-dark {
 .habit-tracker-type-badge {
 	font-size: 0.65em;
 	font-weight: 700;
-	letter-spacing: 0.04em;
+	letter-spacing: var(--htx-tracking);
 	padding: 2px 6px;
 	border-radius: var(--ht-radius-sm);
 	color: var(--htx-text);
@@ -818,16 +962,26 @@ body.theme-dark {
 /* The "reward" moment — a brief pop played on the exact cell just checked
    off, before the next full re-render replaces it. Shared across every
    grid style (year, year-days, week, month) since renderCell() drives all
-   four through this one class. */
+   four through this one class.
+
+   The green flash is the one place --htx-green is spent: completion gets
+   its own hue for the instant it happens, distinct from the violet that
+   carries chrome/hover/focus everywhere else, so "I just did it" reads as
+   its own event rather than one more purple glow. The cell then settles
+   back to the habit's own color, which is what actually persists. */
 @keyframes habit-tracker-pop {
 	0% {
 		transform: scale(1);
+		box-shadow: 0 0 0 0 transparent;
 	}
 	40% {
 		transform: scale(1.22);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--htx-green-bright) 75%, transparent),
+			0 0 18px color-mix(in srgb, var(--htx-green) 70%, transparent);
 	}
 	100% {
 		transform: scale(1);
+		box-shadow: 0 0 0 0 transparent;
 	}
 }
 
@@ -975,7 +1129,7 @@ body.theme-dark {
 
 .habit-tracker-week-grid {
 	display: flex;
-	gap: 8px;
+	gap: var(--htx-cell-gap);
 	padding: 2px 0;
 }
 
@@ -987,8 +1141,8 @@ body.theme-dark {
 	gap: 4px;
 	flex: 1;
 	aspect-ratio: 1 / 1;
-	max-width: 76px;
-	border-radius: var(--ht-radius-lg);
+	max-width: var(--htx-cell-size);
+	border-radius: var(--htx-cell-radius);
 	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-bg-2));
 	border: 1px solid var(--htx-card-border);
 	cursor: pointer;
@@ -1004,12 +1158,12 @@ body.theme-dark {
 	font-size: 0.75em;
 	color: var(--htx-text-muted);
 	text-transform: uppercase;
-	letter-spacing: 0.03em;
+	letter-spacing: var(--htx-tracking);
 }
 
 .habit-tracker-week-date-label {
 	font-size: 1.35em;
-	font-weight: 700;
+	font-weight: var(--htx-num-weight);
 }
 
 .habit-tracker-week-cell-done {
@@ -1037,12 +1191,23 @@ body.theme-dark {
 	border-color: var(--habit-color, var(--text-accent));
 }
 
-/* Same "past + no entry" greying as the year/year-days cells above, just
-   in the boxed week/month card shape. Compound selector for the same
-   specificity-safety reason as .habit-tracker-cell-missed above. */
+/* "Past + no entry". Deliberately near-empty rather than a filled block:
+   a missed day should read as a gap in the row, not as an object competing
+   with the days you actually showed up for. Distinguished from
+   .habit-tracker-week-cell-future by ring STYLE, not color — future is
+   dashed (hasn't happened yet, still open), missed is solid (it happened,
+   and it's empty) — so the two stay tellable apart without relying on hue.
+   Compound selector for the same specificity-safety reason as
+   .habit-tracker-cell-missed above. */
 .habit-tracker-week-cell.habit-tracker-week-cell-missed {
-	background-color: var(--background-modifier-border);
-	border-color: transparent;
+	background-color: transparent;
+	border-style: solid;
+	border-color: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
+}
+
+.habit-tracker-week-cell.habit-tracker-week-cell-missed .habit-tracker-week-day-label,
+.habit-tracker-week-cell.habit-tracker-week-cell-missed .habit-tracker-week-date-label {
+	color: var(--htx-text-faint);
 }
 
 .habit-tracker-week-cell.habit-tracker-cell-blank {
@@ -1160,7 +1325,7 @@ body.theme-dark {
 }
 
 .habit-tracker-modal h3 {
-	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	font-family: "Bahnschrift", "Avenir Next Condensed", "Futura", "Segoe UI", system-ui, sans-serif;
 	margin-top: 0;
 	margin-bottom: var(--ht-space-3);
 	font-size: 1.25em;
@@ -1281,7 +1446,7 @@ body.theme-dark {
 	margin: -4px 0 12px;
 	padding: 8px 12px;
 	border-radius: var(--ht-radius-md);
-	border-left: 2px solid var(--htx-glow-violet);
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 35%, transparent);
 	background-color: var(--htx-card);
 	font-size: 0.8em;
 	color: var(--htx-text-muted);
@@ -1375,7 +1540,7 @@ body.theme-dark {
 	padding: 10px 12px;
 	border-radius: var(--ht-radius-lg);
 	background-color: var(--htx-card);
-	border-left: 3px solid var(--htx-glow-violet);
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 }
 
 .habit-tracker-review-critique {
@@ -1797,35 +1962,66 @@ body.is-mobile .habit-tracker-actions {
 
 /* ---- Habit creation walkthrough ---- */
 
-/* Spotlight effect: while the walkthrough is running, everything in the
-   form dims and stops responding to clicks except the field currently
-   being explained (and the tooltip itself, which is never a direct child
-   matched by this rule since it's excluded below). */
+/* Interaction gate: while the walkthrough runs, only the highlighted field
+   accepts clicks. This is `pointer-events` ONLY — deliberately no opacity or
+   filter here.
+
+   The previous version dimmed with `opacity: 0.25` on every direct child and
+   restored `opacity: 1` on the highlight. That silently failed for 8 of the
+   13 steps: Identity/Goal live in identityWrap, Build-Break in typeWrap,
+   Commit in commitWrap, and the four Four-Laws rows are nested too, so the
+   un-dim rule (a direct-child selector) never matched them. Worse, opacity on
+   an ancestor creates a compositing group a descendant cannot escape, so even
+   a matching rule couldn't have restored them — the field the user was told
+   to fill in rendered dimmer than everything around it.
+
+   Dimming is now done by the cutout on the highlight itself (below), which is
+   immune to nesting. `pointer-events` is kept here because, unlike opacity, it
+   *does* re-enable correctly on a descendant of a disabled ancestor. */
 .habit-tracker-modal.habit-tracker-walkthrough-active > *:not(.habit-tracker-walkthrough-tooltip) {
-	opacity: 0.25;
-	filter: saturate(0.5);
 	pointer-events: none;
-	transition: opacity 0.2s ease, filter 0.2s ease;
 }
 
-.habit-tracker-modal.habit-tracker-walkthrough-active > .habit-tracker-walkthrough-highlight {
-	opacity: 1;
-	filter: none;
-	pointer-events: auto;
-}
+/* Spotlight. The dark wash is painted by the highlighted element itself as a
+   9999px shadow spreading in every direction, so the "hole" is exactly this
+   element's own border box — no overlay element, no ancestor opacity, and no
+   position syncing, since the wash moves with the element as the form
+   scrolls. Clipped to the modal by contentEl's own overflow.
 
+   z-index must beat sibling *positioned* elements (e.g. .habit-tracker-swatch
+   is position:relative), which would otherwise paint through the wash. Stays
+   below .habit-tracker-settings-backdrop (100) and .habit-tweak-panel (300).
+
+   No background tint: against the cutout it muddied the input text, and the
+   surrounding darkness already provides all the separation the row needs. */
 .habit-tracker-walkthrough-highlight {
 	position: relative;
-	z-index: 1;
-	outline: 2px solid var(--htx-glow-violet-bright);
-	outline-offset: 4px;
+	z-index: 50;
+	pointer-events: auto;
+	outline: 1px solid color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
+	outline-offset: 6px;
 	border-radius: var(--ht-radius-md);
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 15%, transparent);
+	box-shadow: 0 0 0 9999px rgba(6, 3, 14, 0.62);
 }
 
+/* Tier two: the actual input inside the highlighted row. The row outline says
+   "this section", this says "type HERE" — the distinction that was missing
+   when a full-width Setting row was the only emphasis. Applied to the step's
+   focusEl by showStep(); the Color step has no focusEl and needs none, since
+   its target is the swatch row itself. */
+.habit-tracker-walkthrough-focus {
+	position: relative;
+	z-index: 51;
+	border-color: var(--htx-glow-violet-bright) !important;
+	box-shadow: 0 0 0 2px var(--htx-glow-violet-bright),
+		0 0 16px color-mix(in srgb, var(--htx-glow-violet) 70%, transparent) !important;
+	transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+/* z-index 60 so the tooltip paints above the spotlight's wash (50/51). */
 .habit-tracker-walkthrough-tooltip {
 	position: absolute;
-	z-index: 2;
+	z-index: 60;
 	width: min(320px, calc(100% - 24px));
 	padding: 12px 14px;
 	border-radius: var(--ht-radius-lg);
@@ -1833,6 +2029,42 @@ body.is-mobile .habit-tracker-actions {
 	border: 1px solid var(--htx-glow-violet);
 	box-shadow: 0 0 20px color-mix(in srgb, var(--htx-glow-violet) 35%, transparent), var(--ht-shadow-md);
 	animation: habit-tracker-tooltip-in 0.18s ease-out;
+}
+
+/* Arrow tying the tooltip to its field. A rotated square inheriting the
+   tooltip's own background and border, with two of its four borders hidden so
+   only the outward-facing corner shows a stroke. positionTooltip() sets
+   --wt-arrow-x (horizontal offset, aligned to the target's left edge and
+   clamped inside the tooltip) and flips the whole thing via the -above class
+   when there isn't room below the field. */
+.habit-tracker-walkthrough-tooltip::after {
+	content: "";
+	position: absolute;
+	left: var(--wt-arrow-x, 22px);
+	width: 10px;
+	height: 10px;
+	background-color: var(--htx-card);
+	transform: rotate(45deg);
+	pointer-events: none;
+}
+
+/* Default: tooltip sits below the field, arrow points up off its top edge. */
+.habit-tracker-walkthrough-tooltip::after {
+	top: -6px;
+	border-left: 1px solid var(--htx-glow-violet);
+	border-top: 1px solid var(--htx-glow-violet);
+	border-right: none;
+	border-bottom: none;
+}
+
+/* Flipped: tooltip sits above the field, arrow points down off its bottom. */
+.habit-tracker-walkthrough-tooltip-above::after {
+	top: auto;
+	bottom: -6px;
+	border-left: none;
+	border-top: none;
+	border-right: 1px solid var(--htx-glow-violet);
+	border-bottom: 1px solid var(--htx-glow-violet);
 }
 
 @keyframes habit-tracker-tooltip-in {
@@ -1918,12 +2150,9 @@ body.is-mobile .habit-tracker-actions {
 .habit-tracker-walkthrough-congrats h3 {
 	margin-top: 0;
 	font-size: 1.5em;
-	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
-	background: linear-gradient(135deg, var(--htx-gold-bright), var(--htx-gold), var(--htx-glow-violet-bright));
-	-webkit-background-clip: text;
-	background-clip: text;
-	color: transparent;
-	text-shadow: 0 0 30px color-mix(in srgb, var(--htx-gold) 40%, transparent);
+	font-family: var(--htx-font-display);
+	color: var(--htx-gold-bright);
+	text-shadow: 0 0 30px color-mix(in srgb, var(--htx-gold) 55%, transparent);
 }
 
 .habit-tracker-walkthrough-congrats p {
@@ -1967,15 +2196,37 @@ body.is-mobile .habit-tracker-actions {
 
 /* ---- One-off scheduled tasks ---- */
 
+/* Tasks and habits are deliberately one system per PRODUCT.md, so a task
+   row uses the same neon tokens and the same top-edge identity bar as a
+   habit card (previously it was still on bare Obsidian theme vars, which
+   read as a different app bolted on beside the redesigned cards). */
 .habit-tracker-task-row {
+	position: relative;
+	overflow: hidden;
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
 	padding: 12px 16px;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid var(--htx-card-border);
 	border-radius: var(--ht-radius-xl);
-	background-color: var(--background-primary-alt, var(--background-secondary));
-	border-left: 4px solid var(--habit-color, var(--interactive-accent));
+	background-color: var(--htx-card);
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.habit-tracker-task-row::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: 2px;
+	background: linear-gradient(
+		90deg,
+		transparent,
+		var(--habit-color, var(--htx-glow-violet)) 15%,
+		var(--habit-color, var(--htx-glow-violet)) 85%,
+		transparent
+	);
+	box-shadow: 0 0 12px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 65%, transparent);
+	pointer-events: none;
 }
 
 .habit-tracker-task-header {
@@ -1984,8 +2235,9 @@ body.is-mobile .habit-tracker-actions {
 	gap: 10px;
 }
 
-.habit-tracker-task-row-overdue {
-	border-left-color: var(--text-error, #ef4444);
+.habit-tracker-task-row-overdue::before {
+	background: linear-gradient(90deg, transparent, var(--htx-red) 15%, var(--htx-red) 85%, transparent);
+	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-red) 70%, transparent);
 }
 
 .habit-tracker-task-row-done {
@@ -2054,10 +2306,14 @@ body.is-mobile .habit-tracker-actions {
 /* Check-in / last-call alarm banners (HabitTrackerPlugin.checkAlarm) —
    styled to read as more urgent than the plain default Notice toast (e.g.
    the milestone one above), since their whole job is to actually get
-   noticed. */
+   noticed. Uses the plugin's own red token and a glow rather than a bare
+   Obsidian var + edge stripe, so an alarm reads as part of this product's
+   escalating-accountability language instead of a generic error toast. */
 .habit-tracker-alarm-notice {
-	border-left: 3px solid var(--text-error, #ef4444);
 	font-weight: 600;
+	color: var(--htx-red, #f87171);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--htx-red, #f87171) 55%, transparent),
+		0 0 18px color-mix(in srgb, var(--htx-red, #f87171) 35%, transparent);
 }
 
 /* Dismiss button inside a last-call alarm's Notice (HabitTrackerPlugin.
@@ -2079,10 +2335,11 @@ body.is-mobile .habit-tracker-actions {
 	flex-shrink: 0;
 	height: 30px;
 	padding: 0 10px;
-	border: 1px solid var(--htx-card-border);
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 	border-radius: var(--ht-radius-md);
-	background-color: var(--htx-card);
-	color: var(--htx-text-muted);
+	background: transparent;
+	box-shadow: none;
+	color: var(--htx-glow-violet-bright);
 	cursor: pointer;
 	font-size: 0.78em;
 	font-weight: 500;
@@ -2093,15 +2350,18 @@ body.is-mobile .habit-tracker-actions {
 }
 
 .habit-tracker-reorder-btn:hover {
-	background-color: color-mix(in srgb, var(--htx-glow-violet) 20%, var(--htx-card));
+	background: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
 	border-color: var(--htx-glow-violet-bright);
-	color: var(--htx-text);
+	color: #f9f5ff;
 }
 
+/* Same "active means filled" rule as the view-toggle segment — the only
+   two things in the toolbar that ever take a solid fill are the selected
+   view and an engaged Reorder mode. */
 .habit-tracker-reorder-btn-active,
 .habit-tracker-reorder-btn-active:hover {
-	background: linear-gradient(135deg, var(--htx-glow-violet), var(--htx-violet-soft));
-	border-color: var(--htx-glow-violet-bright);
+	background: var(--htx-glow-violet);
+	border-color: var(--htx-glow-violet);
 	color: #f9f5ff;
 	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
 }
@@ -2135,13 +2395,17 @@ body.is-mobile .habit-tracker-actions {
 /* Drop-position indicator on the card currently being dragged over — a
    thick accent line on whichever edge the dragged card would land next
    to, computed in attachReorderHandlers' dragover handler from cursor Y
-   position within the hovered card's bounding rect. */
+   position within the hovered card's bounding rect. Deliberately a heavy
+   edge bar: it exists only during an active drag, where its whole job is
+   to say "the card lands HERE" unambiguously at a glance. */
 .habit-tracker-habit-drop-above {
-	box-shadow: inset 0 3px 0 0 var(--interactive-accent);
+	box-shadow: inset 0 3px 0 0 var(--htx-glow-violet-bright),
+		0 -6px 16px -4px color-mix(in srgb, var(--htx-glow-violet) 60%, transparent);
 }
 
 .habit-tracker-habit-drop-below {
-	box-shadow: inset 0 -3px 0 0 var(--interactive-accent);
+	box-shadow: inset 0 -3px 0 0 var(--htx-glow-violet-bright),
+		0 6px 16px -4px color-mix(in srgb, var(--htx-glow-violet) 60%, transparent);
 }
 
 /* Cell click-to-toggle is unattached entirely in JS while reorder mode is
@@ -2170,7 +2434,7 @@ body.is-mobile .habit-tracker-actions {
    feel like the same product as the card/modal surfaces. */
 .habit-tracker-settings-tab h2 {
 	color: var(--htx-glow-violet, #a855f7);
-	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	font-family: "Bahnschrift", "Avenir Next Condensed", "Futura", "Segoe UI", system-ui, sans-serif;
 }
 
 .habit-tracker-settings-tab .setting-item-heading .setting-item-name {
@@ -2188,4 +2452,532 @@ body.is-mobile .habit-tracker-actions {
 .habit-tracker-settings-tab button.mod-cta {
 	background: linear-gradient(135deg, #a855f7, #6d28d9);
 	color: #f9f5ff;
+}
+
+/* ---- Keyboard focus (grid cells + goal link) ----
+   Added alongside the tabindex/role/keydown handlers in renderCell() and
+   the goal-link handlers in main.ts — a plain createDiv() gets none of
+   this from the browser by default, unlike a native <button>/<a>. */
+.habit-tracker-cell:focus-visible,
+.habit-tracker-week-cell:focus-visible,
+.habit-tracker-yeardays-cell:focus-visible {
+	outline: 2px solid var(--htx-glow-violet-bright);
+	outline-offset: 2px;
+	box-shadow: 0 0 12px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
+}
+
+.habit-tracker-goal-link:focus-visible {
+	outline: 2px solid var(--htx-glow-violet-bright);
+	outline-offset: 2px;
+	border-radius: var(--ht-radius-sm);
+}
+
+/* ---- Four Laws formula: collapsed by default ----
+   The levers (cue/craving/routine/reward/goal) matter most at creation and
+   review time; they previously re-rendered in full on every card every day,
+   crowding out the daily-glance question ("is today checked in?"). Collapsed
+   behind this toggle instead — same reveal pattern as the creation modal's
+   own fourlaws box, so it reads as one system. */
+.habit-tracker-levers-toggle {
+	display: inline-block;
+	margin-bottom: 8px;
+	font-size: 0.76em;
+	font-weight: 600;
+	color: var(--htx-text-faint);
+	cursor: pointer;
+	user-select: none;
+	transition: color 0.12s ease;
+}
+
+.habit-tracker-levers-toggle:hover {
+	color: var(--htx-glow-violet-bright);
+}
+
+.habit-tracker-levers-toggle:focus-visible {
+	outline: 2px solid var(--htx-glow-violet-bright);
+	outline-offset: 2px;
+	border-radius: var(--ht-radius-sm);
+}
+
+.habit-tracker-levers-panel {
+	margin-bottom: 8px;
+	padding-left: 10px;
+	border-left: 1px solid color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
+	animation: habit-tracker-fade-in 0.15s ease-out;
+}
+
+/* ---- Reduced motion ----
+   The at-risk ring pulses infinitely, confetti falls, cells pop, and the
+   milestone pill glows — none of which was gated before. Users who ask the
+   OS for reduced motion keep every *state* (the at-risk ring still shows,
+   it just holds steady instead of pulsing; a checked cell still fills) and
+   lose only the animation of it. Confetti is dropped outright rather than
+   frozen, since a static scatter of squares mid-fall is meaningless. */
+@media (prefers-reduced-motion: reduce) {
+	.habit-tracker-cell-at-risk,
+	.habit-tracker-week-cell.habit-tracker-cell-at-risk,
+	.habit-tracker-cell-pop,
+	.habit-tracker-pill-celebrate,
+	.habit-tracker-milestone-bubble-achieved,
+	.habit-tracker-list,
+	.habit-tracker-levers-panel,
+	.habit-tracker-walkthrough-tooltip,
+	.habit-tracker-settings-backdrop {
+		animation: none !important;
+	}
+
+	.habit-tracker-confetti-piece,
+	.habit-tracker-confetti-piece-milestone {
+		display: none !important;
+	}
+
+	.habit-tracker-habit,
+	.habit-tracker-habit:hover {
+		transform: none;
+	}
+}
+
+/* ---- Toolbar ghost controls: win over Obsidian's own button chrome ----
+   Obsidian styles bare `button` with a grey `--interactive-normal` fill
+   plus `--input-shadow`. Plain class selectors above lose to it in
+   practice (confirmed on screen: every toolbar control rendered as a grey
+   slab, including the active view segment whose violet fill was being
+   overridden). These rules re-scope under .habit-tracker-root and force
+   the transparent, outlined treatment. !important is deliberate and
+   load-bearing here for the same host-app-override reason the is-mobile
+   rules further up already use it — a community theme can restyle
+   `button` too, and the ghost toolbar has to survive that. */
+.habit-tracker-root .habit-tracker-walkthrough-btn,
+.habit-tracker-root .habit-tracker-view-btn,
+.habit-tracker-root .habit-tracker-view-nav-btn,
+.habit-tracker-root .habit-tracker-view-today-btn,
+.habit-tracker-root .habit-tracker-reorder-btn,
+.habit-tracker-root .habit-tracker-gear-btn {
+	background: transparent !important;
+	box-shadow: none !important;
+	color: var(--htx-glow-violet-bright);
+}
+
+.habit-tracker-root .habit-tracker-walkthrough-btn:hover,
+.habit-tracker-root .habit-tracker-view-btn:hover,
+.habit-tracker-root .habit-tracker-view-nav-btn:hover,
+.habit-tracker-root .habit-tracker-view-today-btn:hover,
+.habit-tracker-root .habit-tracker-reorder-btn:hover,
+.habit-tracker-root .habit-tracker-gear-btn:hover {
+	background: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent) !important;
+	border-color: var(--htx-glow-violet-bright);
+	color: #f9f5ff;
+}
+
+/* Selection stays the one filled control in the toolbar. */
+.habit-tracker-root .habit-tracker-view-btn-active,
+.habit-tracker-root .habit-tracker-view-btn-active:hover,
+.habit-tracker-root .habit-tracker-reorder-btn-active,
+.habit-tracker-root .habit-tracker-reorder-btn-active:hover {
+	background: var(--htx-glow-violet) !important;
+	border-color: var(--htx-glow-violet) !important;
+	color: #f9f5ff !important;
+	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent) !important;
+}
+
+/* ================================================================
+   Design Tweaks — structural classes
+   Applied to .habit-tracker-root by applyTweaksTo() in main.ts. Each
+   toggle writes a NEGATIVE class (ht-no-*) so an untouched install
+   carries no classes at all and renders exactly as shipped. Select-type
+   tweaks write ht-<group>-<value>. Everything here is CSS-only on
+   purpose: the panel changes the look without triggering a re-render,
+   which is what makes dragging a slider feel instant.
+   ================================================================ */
+
+/* --- Pills: hide individually. Ordered to match the header. --- */
+.habit-tracker-root.ht-no-pill-best .habit-tracker-pill-best,
+.habit-tracker-root.ht-no-pill-week .habit-tracker-pill-week,
+.habit-tracker-root.ht-no-pill-month .habit-tracker-pill-month,
+.habit-tracker-root.ht-no-pill-year .habit-tracker-pill-year,
+.habit-tracker-root.ht-no-pill-votes .habit-tracker-pill-votes {
+	display: none;
+}
+
+/* Hiding the whole secondary row also removes its margin, so the card
+   doesn't keep a gap where the row used to be. */
+.habit-tracker-root.ht-no-secondary .habit-tracker-stats-row-secondary {
+	display: none;
+}
+
+.habit-tracker-root.ht-no-type-badge .habit-tracker-type-badge,
+.habit-tracker-root.ht-no-identity .habit-tracker-identity {
+	display: none;
+}
+
+.habit-tracker-root.ht-identity-roman .habit-tracker-identity {
+	font-style: normal;
+}
+
+/* --- Milestone bubble treatments --- */
+.habit-tracker-root.ht-milestone-solid .habit-tracker-milestone-bubble {
+	border-style: solid;
+}
+
+.habit-tracker-root.ht-milestone-filled .habit-tracker-milestone-bubble {
+	border-style: solid;
+	border-color: transparent;
+	background-color: color-mix(in srgb, var(--htx-gold) 22%, var(--htx-bg-2));
+	color: var(--htx-gold-bright);
+}
+
+/* The "achieved" state already has its own filled gold treatment and must
+   win over the three modes above, which describe the pending bubble. */
+.habit-tracker-root .habit-tracker-milestone-bubble-achieved {
+	border-style: solid;
+	border-color: transparent;
+	background: linear-gradient(135deg, var(--htx-gold), var(--htx-gold-bright));
+	color: #2a1a00;
+}
+
+/* --- Year / year-days grid cells pick up the shape knobs too, so the
+   Shape group moves every view rather than only Week/Month. --- */
+.habit-tracker-cell,
+.habit-tracker-yeardays-cell {
+	border-radius: calc(var(--htx-cell-radius) * 0.4);
+}
+
+.habit-tracker-grid {
+	gap: calc(var(--htx-cell-gap) * 0.375);
+}
+
+.habit-tracker-yeardays-grid {
+	gap: calc(var(--htx-cell-gap) * 0.375);
+}
+
+.habit-tracker-yeardays-cell {
+	width: calc(var(--htx-cell-size) * 0.34);
+	height: calc(var(--htx-cell-size) * 0.34);
+}
+
+/* --- Glow knob reaches the remaining lit surfaces --- */
+.habit-tracker-root .habit-tracker-pill-streak {
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--htx-gold) 55%, transparent),
+		0 0 12px color-mix(in srgb, var(--htx-gold) calc(var(--htx-glow-a) * 0.64), transparent);
+}
+
+.habit-tracker-root .habit-tracker-cell-today {
+	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-glow-violet-bright) var(--htx-glow-a), transparent);
+}
+
+.habit-tracker-root .habit-tracker-view-btn-active,
+.habit-tracker-root .habit-tracker-reorder-btn-active {
+	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-glow-violet) var(--htx-glow-a), transparent) !important;
+}
+
+/* ================================================================
+   Design Tweaks panel
+   Lives on document.body (not inside .habit-tracker-root), so it can't
+   inherit the --htx-* tokens — and mustn't, since it has to stay
+   readable while you're dragging those very tokens to extreme values.
+   Its palette is therefore hardcoded and independent on purpose: if you
+   set the accent to black, the panel still works.
+   ================================================================ */
+.habit-tweak-panel {
+	position: fixed;
+	top: 64px;
+	right: 24px;
+	z-index: 300;
+	width: 340px;
+	max-height: calc(100vh - 120px);
+	display: flex;
+	flex-direction: column;
+	border-radius: 14px;
+	background: #14101c;
+	border: 1px solid #3b3550;
+	box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+	color: #ece8f5;
+	font-size: 13px;
+	font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+	overflow: hidden;
+}
+
+.habit-tweak-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 10px 12px;
+	background: #1b1626;
+	border-bottom: 1px solid #322c45;
+	cursor: grab;
+	user-select: none;
+}
+
+.habit-tweak-header:active {
+	cursor: grabbing;
+}
+
+.habit-tweak-title {
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+
+.habit-tweak-count {
+	font-size: 11px;
+	color: #8b83a3;
+	margin-top: 1px;
+}
+
+.habit-tweak-count-dirty {
+	color: #c9a6ff;
+}
+
+.habit-tweak-close {
+	background: transparent !important;
+	border: none !important;
+	box-shadow: none !important;
+	color: #8b83a3 !important;
+	cursor: pointer;
+	font-size: 14px;
+	padding: 2px 6px;
+	line-height: 1;
+}
+
+.habit-tweak-close:hover {
+	color: #fff !important;
+}
+
+.habit-tweak-body {
+	overflow-y: auto;
+	padding: 4px 0 8px;
+	flex: 1;
+}
+
+.habit-tweak-section-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 9px 12px;
+	font-weight: 600;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: #a99fc4;
+	cursor: pointer;
+	user-select: none;
+	border-top: 1px solid #262032;
+}
+
+.habit-tweak-section-head:hover {
+	color: #fff;
+	background: #1b1626;
+}
+
+.habit-tweak-section-head:focus-visible {
+	outline: 2px solid #8b5cf6;
+	outline-offset: -2px;
+}
+
+.habit-tweak-caret {
+	font-size: 9px;
+	width: 10px;
+}
+
+.habit-tweak-hidden {
+	display: none;
+}
+
+.habit-tweak-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 5px 12px;
+}
+
+.habit-tweak-row:hover {
+	background: #1a1524;
+}
+
+.habit-tweak-label-wrap {
+	min-width: 0;
+	flex: 1;
+}
+
+.habit-tweak-label {
+	font-size: 12px;
+	color: #d9d3e8;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.habit-tweak-value {
+	font-size: 10px;
+	color: #7d7595;
+	font-variant-numeric: tabular-nums;
+}
+
+.habit-tweak-control {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+
+.habit-tweak-range {
+	width: 118px;
+	accent-color: #8b5cf6;
+	cursor: pointer;
+}
+
+.habit-tweak-color {
+	width: 26px;
+	height: 24px;
+	padding: 0;
+	border: 1px solid #3b3550;
+	border-radius: 5px;
+	background: transparent;
+	cursor: pointer;
+}
+
+.habit-tweak-hex {
+	width: 76px;
+	padding: 3px 6px !important;
+	font-size: 11px !important;
+	font-family: ui-monospace, Menlo, Consolas, monospace !important;
+	background: #0f0c16 !important;
+	border: 1px solid #3b3550 !important;
+	border-radius: 5px !important;
+	color: #ece8f5 !important;
+}
+
+.habit-tweak-select {
+	max-width: 152px;
+	padding: 3px 6px !important;
+	font-size: 11px !important;
+	background: #0f0c16 !important;
+	border: 1px solid #3b3550 !important;
+	border-radius: 5px !important;
+	color: #ece8f5 !important;
+}
+
+.habit-tweak-toggle {
+	min-width: 46px;
+	padding: 3px 10px !important;
+	font-size: 11px !important;
+	font-weight: 600 !important;
+	background: #0f0c16 !important;
+	border: 1px solid #3b3550 !important;
+	border-radius: 999px !important;
+	box-shadow: none !important;
+	color: #7d7595 !important;
+	cursor: pointer;
+}
+
+.habit-tweak-toggle-on {
+	background: #8b5cf6 !important;
+	border-color: #8b5cf6 !important;
+	color: #fff !important;
+}
+
+.habit-tweak-footer {
+	display: flex;
+	gap: 6px;
+	padding: 10px 12px;
+	background: #1b1626;
+	border-top: 1px solid #322c45;
+}
+
+.habit-tweak-btn {
+	flex: 1;
+	padding: 6px 8px !important;
+	font-size: 12px !important;
+	font-weight: 600 !important;
+	border-radius: 7px !important;
+	cursor: pointer;
+	background: #262032 !important;
+	border: 1px solid #3b3550 !important;
+	box-shadow: none !important;
+	color: #d9d3e8 !important;
+}
+
+.habit-tweak-btn:hover {
+	background: #322c45 !important;
+	color: #fff !important;
+}
+
+.habit-tweak-btn-cta {
+	background: #8b5cf6 !important;
+	border-color: #8b5cf6 !important;
+	color: #fff !important;
+}
+
+.habit-tweak-btn-cta:hover {
+	background: #9d6ffb !important;
+}
+
+.habit-tweak-btn-warn:hover {
+	background: #4a2230 !important;
+	border-color: #7d3b4d !important;
+	color: #ffd7de !important;
+}
+
+/* Narrow panes / mobile: the panel becomes a bottom sheet rather than a
+   floating card, since a 340px overlay would cover a phone screen. */
+@media (max-width: 620px) {
+	.habit-tweak-panel {
+		top: auto;
+		right: 8px;
+		left: 8px;
+		bottom: 8px;
+		width: auto;
+		max-height: 62vh;
+	}
+}
+
+/* ---- Design Tweaks: copy fields ----
+   Copy rows stack (label above field) rather than sitting side-by-side
+   like the token controls, because the values are sentences, not numbers —
+   a 118px control would be unusable for a walkthrough paragraph. */
+.habit-tweak-row-copy {
+	display: block;
+	padding: 7px 12px 9px;
+}
+
+.habit-tweak-copy-labelrow {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 4px;
+}
+
+/* Placeholder hints, shown inline so they can't be missed — deleting one
+   silently breaks the string's interpolation. */
+.habit-tweak-vars {
+	flex-shrink: 0;
+	font-family: ui-monospace, Menlo, Consolas, monospace;
+	font-size: 10px;
+	color: #7c6bb0;
+	background: #191327;
+	padding: 1px 5px;
+	border-radius: 4px;
+}
+
+.habit-tweak-text,
+.habit-tweak-textarea {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 5px 7px !important;
+	font-size: 12px !important;
+	font-family: inherit !important;
+	line-height: 1.45;
+	background: #0f0c16 !important;
+	border: 1px solid #3b3550 !important;
+	border-radius: 6px !important;
+	color: #ece8f5 !important;
+	resize: vertical;
+}
+
+.habit-tweak-text:focus,
+.habit-tweak-textarea:focus {
+	border-color: #8b5cf6 !important;
+	box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25) !important;
 }

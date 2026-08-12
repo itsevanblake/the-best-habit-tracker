@@ -103,6 +103,328 @@ interface PluginSettings {
 	// credential, not habit data.
 	anthropicApiKey: string;
 	anthropicModel: string;
+	// Design Tweaks — every visual decision in the plugin's look, exposed as
+	// an adjustable value (see TWEAK_SPEC / TweakPanelModal). Stored as a
+	// sparse map of tweak-id -> value: only values the user actually changed
+	// are written, so an untouched install stores `{}` and always tracks
+	// whatever the shipped defaults become. That also means a future
+	// restyle doesn't need a migration — unset ids simply fall through to
+	// the new defaults. Synced like other settings, so a look follows you
+	// across devices.
+	designTweaks: Record<string, string>;
+	// Copy overrides, same sparse-map contract as designTweaks above: only
+	// strings the user actually rewrote are stored, keyed by COPY_SPEC id.
+	// Kept separate from designTweaks because the two have different
+	// lifecycles — a token change repaints, a copy change re-renders.
+	designCopy: Record<string, string>;
+}
+
+// ---- Design Tweaks ----
+// Each entry is one aesthetic decision the design makes, surfaced as a live
+// control. `kind` picks the widget; `cssVar` (when present) means the value
+// is written straight onto .habit-tracker-root as a custom property, which
+// is why the whole system needs no re-render — CSS recalculates on its own.
+// Entries with `bodyClass` instead are structural: they toggle a class that
+// styles.css keys off, for things a single custom property can't express
+// (hiding a whole pill, swapping a border style).
+//
+// `def` must match what styles.css actually ships, because Reset and the
+// "changed?" check both compare against it. When you change a shipped value
+// in styles.css, change it here too or the panel will misreport state.
+type TweakKind = "color" | "range" | "select" | "toggle" | "font";
+
+interface TweakDef {
+	id: string;
+	label: string;
+	group: string;
+	kind: TweakKind;
+	def: string;
+	cssVar?: string;
+	bodyClass?: string;
+	min?: number;
+	max?: number;
+	step?: number;
+	unit?: string;
+	options?: Array<{ value: string; label: string }>;
+	help?: string;
+}
+
+// Font stacks offered in the two font pickers. Deliberately all
+// system-available (no webfont loading, which an Obsidian plugin can't do
+// reliably offline) — each is a real stack with macOS and Windows members
+// plus a generic fallback, rather than a single face that silently degrades
+// on the other OS.
+const TWEAK_FONT_STACKS: Array<{ value: string; label: string }> = [
+	{ value: '"Bahnschrift", "Avenir Next Condensed", "Futura", "Segoe UI", system-ui, sans-serif', label: "Condensed geometric (default display)" },
+	{ value: '"DM Sans", "Segoe UI", system-ui, sans-serif', label: "Neutral sans (default body)" },
+	{ value: 'system-ui, -apple-system, "Segoe UI", sans-serif', label: "System UI" },
+	{ value: '"Futura", "Century Gothic", "Avenir Next", system-ui, sans-serif', label: "Geometric" },
+	{ value: '"Avenir Next", "Avenir", "Segoe UI", system-ui, sans-serif', label: "Humanist" },
+	{ value: '"Helvetica Neue", Helvetica, Arial, sans-serif', label: "Grotesque" },
+	{ value: '"Impact", "Haettenschweiler", "Arial Narrow Bold", sans-serif', label: "Poster / heavy" },
+	{ value: '"Georgia", "Iowan Old Style", "Times New Roman", serif', label: "Serif" },
+	{ value: '"Menlo", "Consolas", "SF Mono", ui-monospace, monospace', label: "Monospace" },
+	{ value: '"Chalkboard SE", "Comic Sans MS", "Bradley Hand", cursive', label: "Handwritten" },
+];
+
+const TWEAK_WEIGHTS: Array<{ value: string; label: string }> = [
+	{ value: "400", label: "Regular" },
+	{ value: "500", label: "Medium" },
+	{ value: "600", label: "Semibold" },
+	{ value: "700", label: "Bold" },
+	{ value: "800", label: "Extrabold" },
+	{ value: "900", label: "Black" },
+];
+
+const TWEAK_SPEC: TweakDef[] = [
+	// ---- Color ----
+	{ id: "accent", label: "Accent", group: "Color", kind: "color", def: "#a855f7", cssVar: "--htx-glow-violet", help: "The main violet. Drives borders, toolbar outlines, focus rings, and the active view segment." },
+	{ id: "accentBright", label: "Accent (bright)", group: "Color", kind: "color", def: "#c084fc", cssVar: "--htx-glow-violet-bright", help: "Hover and focus state of the accent." },
+	{ id: "accentSoft", label: "Accent (deep)", group: "Color", kind: "color", def: "#6d28d9", cssVar: "--htx-violet-soft", help: "The darker end of the accent, used in the panel wash." },
+	{ id: "bg", label: "Page ground", group: "Color", kind: "color", def: "#0a0713", cssVar: "--htx-bg" },
+	{ id: "bg2", label: "Page ground (top)", group: "Color", kind: "color", def: "#120a24", cssVar: "--htx-bg-2", help: "The panel fades from this at the top to the page ground below." },
+	{ id: "card", label: "Card fill", group: "Color", kind: "color", def: "#150d29", cssVar: "--htx-card" },
+	{ id: "text", label: "Text", group: "Color", kind: "color", def: "#f3ecff", cssVar: "--htx-text" },
+	{ id: "textMuted", label: "Text (muted)", group: "Color", kind: "color", def: "#b7a9d9", cssVar: "--htx-text-muted" },
+	{ id: "textFaint", label: "Text (faint)", group: "Color", kind: "color", def: "#8574ad", cssVar: "--htx-text-faint", help: "Formula lines and missed-day numerals. Watch contrast if you darken this." },
+	{ id: "gold", label: "Streak gold", group: "Color", kind: "color", def: "#fbbf24", cssVar: "--htx-gold" },
+	{ id: "goldBright", label: "Streak gold (bright)", group: "Color", kind: "color", def: "#fde68a", cssVar: "--htx-gold-bright" },
+	{ id: "green", label: "Success green", group: "Color", kind: "color", def: "#34d399", cssVar: "--htx-green", help: "The check-in flash." },
+	{ id: "greenBright", label: "Success green (bright)", group: "Color", kind: "color", def: "#4ade80", cssVar: "--htx-green-bright" },
+	{ id: "red", label: "Alert red", group: "Color", kind: "color", def: "#f87171", cssVar: "--htx-red", help: "Streak-at-risk pulse, alarms, overdue tasks." },
+	{ id: "borderStrength", label: "Border strength", group: "Color", kind: "range", def: "30", cssVar: "--htx-border-pct", min: 0, max: 100, step: 5, unit: "%", help: "How much accent shows in card and control outlines." },
+
+	// ---- Type ----
+	{ id: "fontDisplay", label: "Display face", group: "Type", kind: "font", def: TWEAK_FONT_STACKS[0].value, cssVar: "--htx-font-display", options: TWEAK_FONT_STACKS, help: "Habit names, big numbers, headings." },
+	{ id: "fontBody", label: "Body face", group: "Type", kind: "font", def: TWEAK_FONT_STACKS[1].value, cssVar: "--htx-font-body", options: TWEAK_FONT_STACKS },
+	{ id: "rootSize", label: "Overall scale", group: "Type", kind: "range", def: "1.1", cssVar: "--htx-root-size", min: 0.8, max: 1.6, step: 0.05, unit: "em", help: "Scales the entire tracker at once." },
+	{ id: "nameSize", label: "Habit name size", group: "Type", kind: "range", def: "1.15", cssVar: "--htx-name-size", min: 0.8, max: 2.4, step: 0.05, unit: "em" },
+	{ id: "nameWeight", label: "Habit name weight", group: "Type", kind: "select", def: "700", cssVar: "--htx-name-weight", options: TWEAK_WEIGHTS },
+	{ id: "pillSize", label: "Stat pill size", group: "Type", kind: "range", def: "0.74", cssVar: "--htx-pill-size", min: 0.55, max: 1.2, step: 0.02, unit: "em" },
+	{ id: "numWeight", label: "Number weight", group: "Type", kind: "select", def: "700", cssVar: "--htx-num-weight", options: TWEAK_WEIGHTS },
+	{ id: "tracking", label: "Label letter-spacing", group: "Type", kind: "range", def: "0.03", cssVar: "--htx-tracking", min: -0.02, max: 0.3, step: 0.01, unit: "em", help: "Affects uppercase labels like SUN/MON and BUILD." },
+	{ id: "identityItalic", label: "Identity line in italic", group: "Type", kind: "toggle", def: "on", bodyClass: "ht-identity-roman", help: "The → \"I am the type of person who…\" line." },
+
+	// ---- Shape ----
+	{ id: "radius", label: "Corner radius", group: "Shape", kind: "range", def: "12", cssVar: "--htx-radius-base", min: 0, max: 28, step: 1, unit: "px", help: "Scales every rounded corner together." },
+	{ id: "cardPadding", label: "Card padding", group: "Shape", kind: "range", def: "20", cssVar: "--htx-card-pad", min: 6, max: 44, step: 1, unit: "px" },
+	{ id: "cardGap", label: "Gap between cards", group: "Shape", kind: "range", def: "16", cssVar: "--htx-card-gap", min: 0, max: 48, step: 1, unit: "px" },
+	{ id: "panelPadding", label: "Panel padding", group: "Shape", kind: "range", def: "18", cssVar: "--htx-panel-pad", min: 0, max: 48, step: 1, unit: "px" },
+	{ id: "cellSize", label: "Day cell size", group: "Shape", kind: "range", def: "76", cssVar: "--htx-cell-size", min: 40, max: 140, step: 2, unit: "px", help: "Max width of a Week/Month day cell." },
+	{ id: "cellGap", label: "Day cell gap", group: "Shape", kind: "range", def: "8", cssVar: "--htx-cell-gap", min: 0, max: 24, step: 1, unit: "px" },
+	{ id: "cellRadius", label: "Day cell radius", group: "Shape", kind: "range", def: "10", cssVar: "--htx-cell-radius", min: 0, max: 40, step: 1, unit: "px" },
+	{ id: "hairline", label: "Outline weight", group: "Shape", kind: "range", def: "1", cssVar: "--htx-hairline", min: 1, max: 4, step: 1, unit: "px" },
+
+	// ---- Effects ----
+	{ id: "glow", label: "Glow strength", group: "Effects", kind: "range", def: "100", cssVar: "--htx-glow-pct", min: 0, max: 250, step: 10, unit: "%", help: "0 turns every neon bloom off." },
+	{ id: "shadow", label: "Shadow depth", group: "Effects", kind: "range", def: "100", cssVar: "--htx-shadow-pct", min: 0, max: 250, step: 10, unit: "%" },
+	{ id: "motion", label: "Motion speed", group: "Effects", kind: "range", def: "100", cssVar: "--htx-motion-pct", min: 0, max: 300, step: 10, unit: "%", help: "0 stops animation. Your OS reduced-motion setting still overrides this." },
+	{ id: "hoverLift", label: "Cards lift on hover", group: "Effects", kind: "toggle", def: "on", bodyClass: "ht-no-hover-lift" },
+	{ id: "panelWash", label: "Panel background wash", group: "Effects", kind: "toggle", def: "on", bodyClass: "ht-no-panel-wash", help: "The soft radial haze behind all the cards." },
+	{ id: "identityBar", label: "Card identity bar", group: "Effects", kind: "select", def: "fade", bodyClass: "ht-bar", options: [
+		{ value: "fade", label: "Fade at the ends" },
+		{ value: "solid", label: "Solid, full width" },
+		{ value: "off", label: "None" },
+	], help: "The colored line at each card's top edge." },
+	{ id: "barHeight", label: "Identity bar height", group: "Effects", kind: "range", def: "2", cssVar: "--htx-bar-h", min: 1, max: 8, step: 1, unit: "px" },
+
+	// ---- Structure ----
+	{ id: "secondaryStats", label: "Secondary stat row", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-secondary", help: "best / this week / this month / this year." },
+	{ id: "pillBest", label: "Show “best”", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-pill-best" },
+	{ id: "pillWeek", label: "Show “this week”", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-pill-week" },
+	{ id: "pillMonth", label: "Show “this month”", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-pill-month" },
+	{ id: "pillYear", label: "Show “this year”", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-pill-year" },
+	{ id: "pillVotes", label: "Show “votes”", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-pill-votes" },
+	{ id: "typeBadge", label: "Show BUILD / BREAK badge", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-type-badge" },
+	{ id: "identityLine", label: "Show identity line", group: "Structure", kind: "toggle", def: "on", bodyClass: "ht-no-identity" },
+	{ id: "milestoneStyle", label: "Milestone bubble", group: "Structure", kind: "select", def: "dashed", bodyClass: "ht-milestone", options: [
+		{ value: "dashed", label: "Dashed outline" },
+		{ value: "solid", label: "Solid outline" },
+		{ value: "filled", label: "Filled" },
+	] },
+	{ id: "formulaDefault", label: "Formula starts", group: "Structure", kind: "select", def: "closed", options: [
+		{ value: "closed", label: "Collapsed" },
+		{ value: "open", label: "Expanded" },
+	], help: "Whether each card's Four Laws panel is open when the tracker loads." },
+];
+
+const TWEAK_GROUPS = ["Color", "Type", "Shape", "Effects", "Structure"];
+
+// ---- Editable copy ----
+// Every user-facing string, registered with an id and its shipped default,
+// so the Design Tweaks panel can rewrite any of it. Same sparse-storage
+// rule as the design tokens: only edited strings are persisted, so an
+// untouched install tracks whatever the shipped wording becomes.
+//
+// `vars` lists the placeholders a string may contain, written {likeThis}.
+// They're substituted at render time by copyText(); an unknown placeholder
+// is left alone rather than throwing, so a typo degrades to visible text
+// instead of a crash. Strings whose original was a conditional (the
+// walkthrough's habit-vs-task branches) are registered as separate ids —
+// one per branch — rather than trying to make one editable string carry a
+// conditional, which would be unexplainable in a text field.
+interface CopyDef {
+	id: string;
+	label: string;
+	group: string;
+	def: string;
+	multiline?: boolean;
+	vars?: string[];
+	help?: string;
+}
+
+const COPY_GROUP_STATS = "Text · Stats";
+const COPY_GROUP_TOOLBAR = "Text · Toolbar";
+const COPY_GROUP_CARD = "Text · Card";
+const COPY_GROUP_MILESTONE = "Text · Milestones";
+const COPY_GROUP_STATES = "Text · Empty & Modals";
+const COPY_GROUP_WALK = "Text · Walkthrough";
+
+const COPY_SPEC: CopyDef[] = [
+	// --- Stats ---
+	{ id: "stat.streak", label: "Streak label", group: COPY_GROUP_STATS, def: "streak" },
+	{ id: "stat.clean", label: "Streak label (Break habits)", group: COPY_GROUP_STATS, def: "clean", help: "Shown instead of “streak” on a Break habit." },
+	{ id: "stat.best", label: "Best label", group: COPY_GROUP_STATS, def: "best" },
+	{ id: "stat.week", label: "This-week label", group: COPY_GROUP_STATS, def: "this week" },
+	{ id: "stat.month", label: "This-month label", group: COPY_GROUP_STATS, def: "this month" },
+	{ id: "stat.votes", label: "Total label", group: COPY_GROUP_STATS, def: "votes", help: "The all-time count. “votes” is the Atomic Habits framing." },
+	{ id: "stat.year", label: "This-year label", group: COPY_GROUP_STATS, def: "this year" },
+	{ id: "stat.streakIcon", label: "Streak icon", group: COPY_GROUP_STATS, def: "🔥" },
+	{ id: "stat.cleanIcon", label: "Streak icon (Break)", group: COPY_GROUP_STATS, def: "🛡️" },
+	{ id: "stat.bestIcon", label: "Best icon", group: COPY_GROUP_STATS, def: "🏆" },
+
+	// --- Toolbar ---
+	{ id: "tb.week", label: "Week tab", group: COPY_GROUP_TOOLBAR, def: "Week" },
+	{ id: "tb.month", label: "Month tab", group: COPY_GROUP_TOOLBAR, def: "Month" },
+	{ id: "tb.year", label: "Year tab", group: COPY_GROUP_TOOLBAR, def: "Year" },
+	{ id: "tb.yeardays", label: "Year-Days tab", group: COPY_GROUP_TOOLBAR, def: "Year - Days" },
+	{ id: "tb.today", label: "Today button", group: COPY_GROUP_TOOLBAR, def: "Today" },
+	{ id: "tb.reorder", label: "Reorder button", group: COPY_GROUP_TOOLBAR, def: "⠿ Reorder" },
+	{ id: "tb.walkthrough", label: "Walkthrough button", group: COPY_GROUP_TOOLBAR, def: "🎓 Creation Walkthrough" },
+	{ id: "tb.addHabit", label: "Add-habit button", group: COPY_GROUP_TOOLBAR, def: "Add habit" },
+
+	// --- Card ---
+	{ id: "card.build", label: "Build badge", group: COPY_GROUP_CARD, def: "BUILD" },
+	{ id: "card.break", label: "Break badge", group: COPY_GROUP_CARD, def: "BREAK" },
+	{ id: "card.formulaShow", label: "Show formula", group: COPY_GROUP_CARD, def: "▸ Show the formula ({n})", vars: ["n"] },
+	{ id: "card.formulaHide", label: "Hide formula", group: COPY_GROUP_CARD, def: "▾ Hide the formula" },
+	{ id: "card.identityPrefix", label: "Identity prefix", group: COPY_GROUP_CARD, def: "→ " },
+	{ id: "card.cuePrefix", label: "Cue prefix", group: COPY_GROUP_CARD, def: "⛓ Cue: " },
+	{ id: "card.cravingPrefix", label: "Craving prefix", group: COPY_GROUP_CARD, def: "🍯 Craving: " },
+	{ id: "card.routinePrefix", label: "Routine prefix", group: COPY_GROUP_CARD, def: "💡 Routine: " },
+	{ id: "card.rewardPrefix", label: "Reward prefix", group: COPY_GROUP_CARD, def: "🎉 Reward: " },
+	{ id: "card.goalPrefix", label: "Goal prefix", group: COPY_GROUP_CARD, def: "🎯 " },
+
+	// --- Milestones & celebration ---
+	{ id: "ms.next", label: "Days to next milestone", group: COPY_GROUP_MILESTONE, def: "🎯 {n} {dayWord} to next milestone", vars: ["n", "dayWord"], help: "{dayWord} becomes day / days automatically." },
+	{ id: "ms.achieved", label: "Milestone achieved", group: COPY_GROUP_MILESTONE, def: "🎉 {n}-Day Milestone Achieved!", vars: ["n"] },
+	{ id: "ms.allDone", label: "All milestones done", group: COPY_GROUP_MILESTONE, def: "🏆 All milestones achieved!" },
+	{ id: "ms.firstTitle", label: "First-habit title", group: COPY_GROUP_MILESTONE, def: "🎉 You just built your first habit!" },
+	{ id: "ms.firstTaskTitle", label: "First-task title", group: COPY_GROUP_MILESTONE, def: "🎉 You just built full accountability into a task!" },
+	{ id: "ms.firstBody", label: "First-habit body", group: COPY_GROUP_MILESTONE, multiline: true, vars: ["habit"], def: '"{habit}" is live, and you\'ve filled in the whole loop for it — the cue, the craving, the routine, and the reward.' },
+	{ id: "ms.firstTaskBody", label: "First-task body", group: COPY_GROUP_MILESTONE, multiline: true, vars: ["habit", "date"], def: '"{habit}" is scheduled for {date}, and you\'ve filled in the whole loop for it — the cue, the craving, the routine, and the reward.' },
+	{ id: "ms.firstBody2", label: "First-habit body (2nd para)", group: COPY_GROUP_MILESTONE, multiline: true, def: "The only thing left is showing up. Keep coming back to the daily tracker, check it off, and protect your streak — small, consistent reps are what actually compound into the person you're becoming." },
+	{ id: "ms.firstTaskBody2", label: "First-task body (2nd para)", group: COPY_GROUP_MILESTONE, multiline: true, def: "It'll stay out of the way until its date, then show up ready to check off — you've already named exactly when, why, and how you'll follow through." },
+	{ id: "ms.firstCta", label: "First-habit button", group: COPY_GROUP_MILESTONE, def: "Let's go" },
+	{ id: "ms.allHabitsTitle", label: "All-habits-done title", group: COPY_GROUP_MILESTONE, def: "🎉 Every habit, checked off!" },
+	{ id: "ms.allTasksTitle", label: "All-tasks-done title", group: COPY_GROUP_MILESTONE, def: "🎉 Every task checked off!" },
+	{ id: "ms.allHabitsBody", label: "All-habits-done body", group: COPY_GROUP_MILESTONE, multiline: true, vars: ["count", "plural"], def: "You showed up for all {count} habit{plural} today — that's today's vote cast for who you're becoming." },
+	{ id: "ms.allTasksBody", label: "All-tasks-done body", group: COPY_GROUP_MILESTONE, multiline: true, vars: ["count", "plural", "date"], def: "All {count} task{plural} tracked for {date} are done — full accountability, nothing left on the table." },
+	{ id: "ms.allCta", label: "All-done button", group: COPY_GROUP_MILESTONE, def: "Nice" },
+
+	// --- Empty states & modals ---
+	{ id: "st.emptyIcon", label: "Empty icon", group: COPY_GROUP_STATES, def: "🌱" },
+	{ id: "st.emptyTitle", label: "Empty title", group: COPY_GROUP_STATES, def: "No habits yet" },
+	{ id: "st.emptyBody", label: "Empty body", group: COPY_GROUP_STATES, multiline: true, def: "Every streak starts with day one — add your first habit below to get started." },
+	{ id: "st.emptyFilterIcon", label: "Filtered-empty icon", group: COPY_GROUP_STATES, def: "🔍" },
+	{ id: "st.emptyFilterTitle", label: "Filtered-empty title", group: COPY_GROUP_STATES, def: 'No habit named "{name}" yet', vars: ["name"] },
+	{ id: "st.doneSection", label: "Done section", group: COPY_GROUP_STATES, def: "✅ Done ({n})", vars: ["n"] },
+	{ id: "st.deleteTitle", label: "Delete title", group: COPY_GROUP_STATES, def: "Delete habit?" },
+	{ id: "st.deleteBody", label: "Delete body", group: COPY_GROUP_STATES, multiline: true, vars: ["name"], def: '"{name}" and all of its check-in history will be permanently deleted. This can\'t be undone.' },
+	{ id: "st.deleteConfirm", label: "Delete typed-confirm prompt", group: COPY_GROUP_STATES, multiline: true, vars: ["n"], def: "This habit has {n} logged days. Type its name to confirm." },
+	{ id: "st.deleteCancel", label: "Delete cancel button", group: COPY_GROUP_STATES, def: "Cancel" },
+	{ id: "st.deleteConfirmBtn", label: "Delete confirm button", group: COPY_GROUP_STATES, def: "Delete" },
+
+	// --- Walkthrough ---
+	{ id: "wt.intro", label: "Intro tooltip", group: COPY_GROUP_WALK, def: '👇 Click "+ Add habit" below to start' },
+	{ id: "wt.skip", label: "Skip button", group: COPY_GROUP_WALK, def: "Skip walkthrough" },
+	{ id: "wt.back", label: "Back button", group: COPY_GROUP_WALK, def: "Back" },
+	{ id: "wt.next", label: "Next button", group: COPY_GROUP_WALK, def: "Next" },
+	{ id: "wt.nameTitle", label: "1 · Name — title", group: COPY_GROUP_WALK, def: "Name it" },
+	{ id: "wt.nameBody", label: "1 · Name — body", group: COPY_GROUP_WALK, multiline: true, def: 'Let\'s build this together. Start by giving it a short, concrete name — something you\'d recognize at a glance, like "Morning run" or "Book the dentist".' },
+	{ id: "wt.kindTitle", label: "2 · Kind — title", group: COPY_GROUP_WALK, def: "Habit or Task?" },
+	{ id: "wt.kindBody", label: "2 · Kind — body", group: COPY_GROUP_WALK, multiline: true, def: "Is this something you'll do repeatedly (a Habit), or is this something you'll do once on a specific date (a Task)? Pick whichever fits." },
+	{ id: "wt.identityBody", label: "3 · Identity — body", group: COPY_GROUP_WALK, multiline: true, vars: ["example"], def: 'This isn\'t just about the outcome — it\'s a vote for who you\'re becoming. Every time you follow through, you\'re proving something to yourself. Who are you becoming by doing this? Example: "{example}"' },
+	{ id: "wt.goalBodyHabit", label: "4 · Goal — body (habit)", group: COPY_GROUP_WALK, multiline: true, def: "You don't rise to the level of your goals — you fall to the level of your systems. This habit is your system; pick which Goal it's actually serving." },
+	{ id: "wt.goalBodyTask", label: "4 · Goal — body (task)", group: COPY_GROUP_WALK, multiline: true, def: "You don't rise to the level of your goals — you fall to the level of your systems. This task is one rep of that system; pick which Goal it's actually serving." },
+	{ id: "wt.colorTitle", label: "5 · Color — title", group: COPY_GROUP_WALK, def: "Pick a color" },
+	{ id: "wt.colorBody", label: "5 · Color — body", group: COPY_GROUP_WALK, multiline: true, def: "Give it a color so you can spot it at a glance. Click a preset color, or pick and save your own from the wheel." },
+	{ id: "wt.typeBody", label: "6 · Build/Break — body", group: COPY_GROUP_WALK, multiline: true, def: "Are you starting this habit, or trying to quit one? Pick Build if you're starting it, or Break if you're trying to quit it — the same Four Laws apply, just reversed for breaking a habit." },
+	{ id: "wt.dateTitle", label: "7 · Date — title", group: COPY_GROUP_WALK, def: "Scheduled date" },
+	{ id: "wt.dateBody", label: "7 · Date — body", group: COPY_GROUP_WALK, multiline: true, def: 'When are you doing this? Pick the exact date — it\'ll stay out of the way until then, and show up ready to check off. Naming a specific day, not just "someday," is what actually gets one-off tasks done.' },
+	{ id: "wt.cueBodyHabit", label: "8 · Cue — body (habit)", group: COPY_GROUP_WALK, multiline: true, vars: ["example"], def: 'What will remind you to do this? Anchor it to something you already do without thinking, so the cue is impossible for you to miss. Example: "{example}"' },
+	{ id: "wt.cueBodyTask", label: "8 · Cue — body (task)", group: COPY_GROUP_WALK, multiline: true, vars: ["example"], def: 'When and where will you actually do this? Naming the exact moment — not just "sometime that day" — is what actually gets a one-off task done. Example: "{example}"' },
+	{ id: "wt.cravingBody", label: "9 · Craving — body", group: COPY_GROUP_WALK, multiline: true, vars: ["example"], def: 'What makes you actually want to do this? Tie it to something you already crave, so that craving pulls you in. Example: "{example}"' },
+	{ id: "wt.routineBody", label: "10 · Routine — body", group: COPY_GROUP_WALK, multiline: true, vars: ["example"], def: 'Now scale it down for yourself. What\'s the two-minute version you could do even on your worst day? Optimize for showing up, not for going hard. Example: "{example}"' },
+	{ id: "wt.rewardBodyHabit", label: "11 · Reward — body (habit)", group: COPY_GROUP_WALK, multiline: true, vars: ["example"], def: 'How will you know you\'re done, right away? Give yourself an immediate payoff — that\'s what will make you want to repeat this tomorrow. Example: "{example}"' },
+	{ id: "wt.rewardBodyTask", label: "11 · Reward — body (task)", group: COPY_GROUP_WALK, multiline: true, vars: ["example"], def: 'How will you know you\'re done, right away? Give yourself an immediate payoff the moment you check it off. Example: "{example}"' },
+	{ id: "wt.commitTitle", label: "12 · Commit — title", group: COPY_GROUP_WALK, def: "Commit" },
+	{ id: "wt.commitBody", label: "12 · Commit — body", group: COPY_GROUP_WALK, multiline: true, vars: ["verb", "subject"], def: 'Ready to commit? Check the box below to say "I commit to {verb} {subject}" — a small, deliberate act that locks in your intention before you start.' },
+	{ id: "wt.finishTitleHabit", label: "13 · Finish — title (habit)", group: COPY_GROUP_WALK, def: "Add the habit" },
+	{ id: "wt.finishTitleTask", label: "13 · Finish — title (task)", group: COPY_GROUP_WALK, def: "Add the task" },
+	{ id: "wt.finishBodyHabit", label: "13 · Finish — body (habit)", group: COPY_GROUP_WALK, multiline: true, def: "You've just built your whole system. Click below to add your first habit and start your streak." },
+	{ id: "wt.finishBodyTask", label: "13 · Finish — body (task)", group: COPY_GROUP_WALK, multiline: true, def: "You've just built full accountability into this one-off. Click below to add your task — it'll stay out of sight until its date, then show up ready to check off." },
+];
+
+const COPY_GROUPS = [COPY_GROUP_STATS, COPY_GROUP_TOOLBAR, COPY_GROUP_CARD, COPY_GROUP_MILESTONE, COPY_GROUP_STATES, COPY_GROUP_WALK];
+
+// Built with a plain loop rather than Object.fromEntries: the build targets
+// es2018, where fromEntries doesn't exist in the type lib (and isn't
+// guaranteed at runtime on older Electron builds).
+const COPY_BY_ID: Record<string, CopyDef> = {};
+COPY_SPEC.forEach((c) => {
+	COPY_BY_ID[c.id] = c;
+});
+
+// Resolves one copy string: user override if set, else the shipped default,
+// with {placeholders} substituted. Unknown placeholders are deliberately
+// left as-is so a typo shows up on screen instead of throwing mid-render.
+function copyText(overrides: Record<string, string>, id: string, vars?: Record<string, string | number>): string {
+	const def = COPY_BY_ID[id];
+	if (!def) return "";
+	const raw = overrides[id] !== undefined && overrides[id] !== "" ? overrides[id] : def.def;
+	if (!vars) return raw;
+	return raw.replace(/\{(\w+)\}/g, (whole, key) => (key in vars ? String(vars[key]) : whole));
+}
+
+// Reads a tweak's current value, falling back to its shipped default.
+function tweakValue(tweaks: Record<string, string>, id: string): string {
+	const def = TWEAK_SPEC.find((t) => t.id === id);
+	if (!def) return "";
+	const raw = tweaks[id];
+	return raw === undefined || raw === "" ? def.def : raw;
+}
+
+// Pushes the whole tweak set onto a root element as inline custom
+// properties plus structural classes. Called on every render and on every
+// live control change; cheap enough to do wholesale rather than diffing,
+// since it's a few dozen setProperty calls on one element.
+function applyTweaksTo(el: HTMLElement, tweaks: Record<string, string>) {
+	for (const def of TWEAK_SPEC) {
+		const value = tweakValue(tweaks, def.id);
+		if (def.cssVar) {
+			el.style.setProperty(def.cssVar, def.unit && def.kind === "range" ? `${value}${def.unit}` : value);
+		}
+		if (!def.bodyClass) continue;
+		if (def.kind === "toggle") {
+			// A toggle's class is the NEGATIVE (ht-no-*): present only when
+			// the user has turned the thing off, so the default state adds
+			// no classes at all.
+			el.toggleClass(def.bodyClass, value !== "on");
+		} else if (def.kind === "select") {
+			(def.options ?? []).forEach((opt) => el.toggleClass(`${def.bodyClass}-${opt.value}`, value === opt.value));
+		}
+	}
 }
 
 const DEFAULT_MILESTONES = [7, 30, 60, 100, 150, 200, 250, 300, 365];
@@ -121,6 +443,8 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	lastCallAlarms: [],
 	anthropicApiKey: "",
 	anthropicModel: "claude-haiku-4-5-20251001",
+	designTweaks: {},
+	designCopy: {},
 };
 
 // A cohesive, vibrant set (consistent saturation/lightness rather than a
@@ -794,7 +1118,7 @@ class HabitFormModal extends Modal {
 
 		if (!this.opts.walkthrough) {
 			const walkthroughBtn = contentEl.createEl("button", {
-				text: "🎓 Creation Walkthrough",
+				text: copyText(this.plugin.settings.designCopy, "tb.walkthrough"),
 				cls: "habit-tracker-walkthrough-btn habit-tracker-modal-walkthrough-btn",
 			});
 			walkthroughBtn.type = "button";
@@ -1296,78 +1620,69 @@ class HabitFormModal extends Modal {
 		const isTask = () => this.values.kind === "task";
 		const steps: WalkthroughStep[] = [
 			{
-				title: "Name it",
-				body: 'Let\'s build this together. Start by giving it a short, concrete name — something you\'d recognize at a glance, like "Morning run" or "Book the dentist".',
+				title: copyText(this.plugin.settings.designCopy, "wt.nameTitle"),
+				body: copyText(this.plugin.settings.designCopy, "wt.nameBody"),
 				target: refs.nameSetting.settingEl,
 				focusEl: refs.nameInputEl,
 			},
 			{
-				title: "Habit or Task?",
-				body: "Is this something you'll do repeatedly (a Habit), or is this something you'll do once on a specific date (a Task)? Pick whichever fits.",
+				title: copyText(this.plugin.settings.designCopy, "wt.kindTitle"),
+				body: copyText(this.plugin.settings.designCopy, "wt.kindBody"),
 				target: refs.kindSetting.settingEl,
 				focusEl: refs.kindSelectEl,
 			},
 			{
 				title: LEVER_TERM_INFO.identity.term,
-				body: `This isn't just about the outcome — it's a vote for who you're becoming. Every time you follow through, you're proving something to yourself. Who are you becoming by doing this? Example: "${EXAMPLE_LEVERS.identity}"`,
+				body: copyText(this.plugin.settings.designCopy, "wt.identityBody", { example: EXAMPLE_LEVERS.identity }),
 				target: lever("identity").setting.settingEl,
 				focusEl: lever("identity").textareaEl,
 			},
 			{
 				title: LEVER_TERM_INFO.linkedGoal.term,
-				body: () =>
-					isTask()
-						? "You don't rise to the level of your goals — you fall to the level of your systems. This task is one rep of that system; pick which Goal it's actually serving."
-						: "You don't rise to the level of your goals — you fall to the level of your systems. This habit is your system; pick which Goal it's actually serving.",
+				body: () => copyText(this.plugin.settings.designCopy, isTask() ? "wt.goalBodyTask" : "wt.goalBodyHabit"),
 				target: refs.goalSetting.settingEl,
 				focusEl: refs.goalSelectEl,
 			},
 			{
-				title: "Pick a color",
-				body: "Give it a color so you can spot it at a glance. Click a preset color, or pick and save your own from the wheel.",
+				title: copyText(this.plugin.settings.designCopy, "wt.colorTitle"),
+				body: copyText(this.plugin.settings.designCopy, "wt.colorBody"),
 				target: refs.swatchRow,
 			},
 			{
 				title: TYPE_INFO.term,
-				body: "Are you starting this habit, or trying to quit one? Pick Build if you're starting it, or Break if you're trying to quit it — the same Four Laws apply, just reversed for breaking a habit.",
+				body: copyText(this.plugin.settings.designCopy, "wt.typeBody"),
 				target: refs.typeSetting.settingEl,
 				focusEl: refs.typeSelectEl,
 				skipIf: isTask,
 			},
 			{
-				title: "Scheduled date",
-				body: 'When are you doing this? Pick the exact date — it\'ll stay out of the way until then, and show up ready to check off. Naming a specific day, not just "someday," is what actually gets one-off tasks done.',
+				title: copyText(this.plugin.settings.designCopy, "wt.dateTitle"),
+				body: copyText(this.plugin.settings.designCopy, "wt.dateBody"),
 				target: refs.scheduledDateSetting.settingEl,
 				focusEl: refs.scheduledDateInputEl,
 				skipIf: () => !isTask(),
 			},
 			{
 				title: LEVER_TERM_INFO.stackedAfter.term,
-				body: () =>
-					isTask()
-						? `When and where will you actually do this? Naming the exact moment — not just "sometime that day" — is what actually gets a one-off task done. Example: "${EXAMPLE_LEVERS.stackedAfter}"`
-						: `What will remind you to do this? Anchor it to something you already do without thinking, so the cue is impossible for you to miss. Example: "${EXAMPLE_LEVERS.stackedAfter}"`,
+				body: () => copyText(this.plugin.settings.designCopy, isTask() ? "wt.cueBodyTask" : "wt.cueBodyHabit", { example: EXAMPLE_LEVERS.stackedAfter }),
 				target: lever("stackedAfter").setting.settingEl,
 				focusEl: lever("stackedAfter").textareaEl,
 			},
 			{
 				title: LEVER_TERM_INFO.craving.term,
-				body: `What makes you actually want to do this? Tie it to something you already crave, so that craving pulls you in. Example: "${EXAMPLE_LEVERS.craving}"`,
+				body: copyText(this.plugin.settings.designCopy, "wt.cravingBody", { example: EXAMPLE_LEVERS.craving }),
 				target: lever("craving").setting.settingEl,
 				focusEl: lever("craving").textareaEl,
 			},
 			{
 				title: LEVER_TERM_INFO.minimumVersion.term,
-				body: `Now scale it down for yourself. What's the two-minute version you could do even on your worst day? Optimize for showing up, not for going hard. Example: "${EXAMPLE_LEVERS.minimumVersion}"`,
+				body: copyText(this.plugin.settings.designCopy, "wt.routineBody", { example: EXAMPLE_LEVERS.minimumVersion }),
 				target: lever("minimumVersion").setting.settingEl,
 				focusEl: lever("minimumVersion").textareaEl,
 			},
 			{
 				title: LEVER_TERM_INFO.reward.term,
-				body: () =>
-					isTask()
-						? `How will you know you're done, right away? Give yourself an immediate payoff the moment you check it off. Example: "${EXAMPLE_LEVERS.reward}"`
-						: `How will you know you're done, right away? Give yourself an immediate payoff — that's what will make you want to repeat this tomorrow. Example: "${EXAMPLE_LEVERS.reward}"`,
+				body: () => copyText(this.plugin.settings.designCopy, isTask() ? "wt.rewardBodyTask" : "wt.rewardBodyHabit", { example: EXAMPLE_LEVERS.reward }),
 				target: lever("reward").setting.settingEl,
 				focusEl: lever("reward").textareaEl,
 			},
@@ -1375,11 +1690,11 @@ class HabitFormModal extends Modal {
 
 		if (refs.commitCheckboxEl) {
 			steps.push({
-				title: "Commit",
+				title: copyText(this.plugin.settings.designCopy, "wt.commitTitle"),
 				body: () => {
 					const verb = isTask() ? "completing" : this.values.type === "break" ? "breaking" : "building";
 					const subject = isTask() ? "this task" : "this habit";
-					return `Ready to commit? Check the box below to say "I commit to ${verb} ${subject}" — a small, deliberate act that locks in your intention before you start.`;
+					return copyText(this.plugin.settings.designCopy, "wt.commitBody", { verb, subject });
 				},
 				target: (refs.commitCheckboxEl.closest("label") as HTMLElement) ?? refs.commitCheckboxEl,
 				focusEl: refs.commitCheckboxEl,
@@ -1387,11 +1702,8 @@ class HabitFormModal extends Modal {
 		}
 
 		steps.push({
-			title: () => (isTask() ? "Add the task" : "Add the habit"),
-			body: () =>
-				isTask()
-					? "You've just built full accountability into this one-off. Click below to add your task — it'll stay out of sight until its date, then show up ready to check off."
-					: "You've just built your whole system. Click below to add your first habit and start your streak.",
+			title: () => copyText(this.plugin.settings.designCopy, isTask() ? "wt.finishTitleTask" : "wt.finishTitleHabit"),
+			body: () => copyText(this.plugin.settings.designCopy, isTask() ? "wt.finishBodyTask" : "wt.finishBodyHabit"),
 			target: refs.footer,
 			focusEl: refs.submitBtn,
 		});
@@ -1401,9 +1713,9 @@ class HabitFormModal extends Modal {
 		const titleEl = tooltip.createEl("strong", { cls: "habit-tracker-walkthrough-title" });
 		const bodyEl = tooltip.createEl("p", { cls: "habit-tracker-walkthrough-body" });
 		const btnRow = tooltip.createDiv({ cls: "habit-tracker-walkthrough-btns" });
-		const skipBtn = btnRow.createEl("button", { text: "Skip walkthrough", cls: "habit-tracker-walkthrough-skip" });
-		const backBtn = btnRow.createEl("button", { text: "Back" });
-		const nextBtn = btnRow.createEl("button", { text: "Next", cls: "mod-cta" });
+		const skipBtn = btnRow.createEl("button", { text: copyText(this.plugin.settings.designCopy, "wt.skip"), cls: "habit-tracker-walkthrough-skip" });
+		const backBtn = btnRow.createEl("button", { text: copyText(this.plugin.settings.designCopy, "wt.back") });
+		const nextBtn = btnRow.createEl("button", { text: copyText(this.plugin.settings.designCopy, "wt.next"), cls: "mod-cta" });
 		skipBtn.type = "button";
 		backBtn.type = "button";
 		nextBtn.type = "button";
@@ -1644,18 +1956,16 @@ class HabitFormModal extends Modal {
 		const isTask = this.values.kind === "task";
 		contentEl.empty();
 		contentEl.addClass("habit-tracker-walkthrough-congrats");
-		contentEl.createEl("h3", { text: isTask ? "🎉 You just built full accountability into a task!" : "🎉 You just built your first habit!" });
+		contentEl.createEl("h3", { text: copyText(this.plugin.settings.designCopy, isTask ? "ms.firstTaskTitle" : "ms.firstTitle") });
 		contentEl.createEl("p", {
 			text: isTask
-				? `"${habitName}" is scheduled for ${this.values.scheduledDate}, and you've filled in the whole loop for it — the cue, the craving, the routine, and the reward.`
-				: `"${habitName}" is live, and you've filled in the whole loop for it — the cue, the craving, the routine, and the reward.`,
+				? copyText(this.plugin.settings.designCopy, "ms.firstTaskBody", { habit: habitName, date: this.values.scheduledDate })
+				: copyText(this.plugin.settings.designCopy, "ms.firstBody", { habit: habitName }),
 		});
 		contentEl.createEl("p", {
-			text: isTask
-				? "It'll stay out of the way until its date, then show up ready to check off — you've already named exactly when, why, and how you'll follow through."
-				: "The only thing left is showing up. Keep coming back to the daily tracker, check it off, and protect your streak — small, consistent reps are what actually compound into the person you're becoming.",
+			text: copyText(this.plugin.settings.designCopy, isTask ? "ms.firstTaskBody2" : "ms.firstBody2"),
 		});
-		const doneBtn = contentEl.createEl("button", { text: "Let's go", cls: "mod-cta" });
+		const doneBtn = contentEl.createEl("button", { text: copyText(this.plugin.settings.designCopy, "ms.firstCta"), cls: "mod-cta" });
 		doneBtn.type = "button";
 		doneBtn.onclick = () => this.close();
 		window.setTimeout(() => doneBtn.focus(), 0);
@@ -1675,8 +1985,11 @@ class DailyCongratsModal extends Modal {
 	count: number;
 	date?: string;
 
-	constructor(app: App, kind: "habits" | "tasks", count: number, date?: string) {
-		super(app);
+	plugin: HabitTrackerPlugin;
+
+	constructor(plugin: HabitTrackerPlugin, kind: "habits" | "tasks", count: number, date?: string) {
+		super(plugin.app);
+		this.plugin = plugin;
 		this.kind = kind;
 		this.count = count;
 		this.date = date;
@@ -1688,13 +2001,13 @@ class DailyCongratsModal extends Modal {
 		contentEl.addClass("habit-tracker-walkthrough-congrats");
 		const isTasks = this.kind === "tasks";
 		const plural = this.count === 1 ? "" : "s";
-		contentEl.createEl("h3", { text: isTasks ? "🎉 Every task checked off!" : "🎉 Every habit, checked off!" });
+		contentEl.createEl("h3", { text: copyText(this.plugin.settings.designCopy, isTasks ? "ms.allTasksTitle" : "ms.allHabitsTitle") });
 		contentEl.createEl("p", {
 			text: isTasks
-				? `All ${this.count} task${plural} tracked for ${this.date} are done — full accountability, nothing left on the table.`
-				: `You showed up for all ${this.count} habit${plural} today — that's today's vote cast for who you're becoming.`,
+				? copyText(this.plugin.settings.designCopy, "ms.allTasksBody", { count: this.count, plural, date: this.date ?? "" })
+				: copyText(this.plugin.settings.designCopy, "ms.allHabitsBody", { count: this.count, plural }),
 		});
-		const doneBtn = contentEl.createEl("button", { text: "Nice", cls: "mod-cta" });
+		const doneBtn = contentEl.createEl("button", { text: copyText(this.plugin.settings.designCopy, "ms.allCta"), cls: "mod-cta" });
 		doneBtn.type = "button";
 		doneBtn.onclick = () => this.close();
 		window.setTimeout(() => doneBtn.focus(), 0);
@@ -1705,29 +2018,67 @@ class DailyCongratsModal extends Modal {
 	}
 }
 
+// Below this many logged entries, a habit's history is treated as
+// "meaningful" — deleting it destroys a real record, not a false start —
+// and the modal requires typing the name back rather than a single click.
+// A brand-new habit with a handful of check-ins stays a quick one-click
+// delete; that friction asymmetry (vs. the settings-tab history reset,
+// which always requires typed confirmation regardless of size) was a
+// design-review finding: the *more* destructive action had *less*
+// friction than the less destructive one.
+const DELETE_CONFIRM_TYPED_THRESHOLD = 7;
+
 class ConfirmDeleteModal extends Modal {
 	habitName: string;
+	entryCount: number;
 	onConfirm: () => void;
 
-	constructor(app: App, habitName: string, onConfirm: () => void) {
-		super(app);
+	plugin: HabitTrackerPlugin;
+
+	constructor(plugin: HabitTrackerPlugin, habitName: string, entryCount: number, onConfirm: () => void) {
+		super(plugin.app);
+		this.plugin = plugin;
 		this.habitName = habitName;
+		this.entryCount = entryCount;
 		this.onConfirm = onConfirm;
 	}
 
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.addClass("habit-tracker-modal");
-		contentEl.createEl("h3", { text: "Delete habit?" });
+		contentEl.createEl("h3", { text: copyText(this.plugin.settings.designCopy, "st.deleteTitle") });
 		contentEl.createEl("p", {
-			text: `"${this.habitName}" and all of its check-in history will be permanently deleted. This can't be undone.`,
+			text: copyText(this.plugin.settings.designCopy, "st.deleteBody", { name: this.habitName }),
 		});
 
+		const needsTypedConfirm = this.entryCount >= DELETE_CONFIRM_TYPED_THRESHOLD;
+		let confirmInput: HTMLInputElement | undefined;
+		let deleteBtn: HTMLButtonElement;
+
+		if (needsTypedConfirm) {
+			contentEl.createEl("p", {
+				cls: "habit-tracker-settings-label",
+				text: copyText(this.plugin.settings.designCopy, "st.deleteConfirm", { n: this.entryCount }),
+			});
+			confirmInput = contentEl.createEl("input", {
+				type: "text",
+				placeholder: this.habitName,
+				cls: "habit-tracker-reset-confirm-input",
+			});
+		}
+
 		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
-		const cancelBtn = footer.createEl("button", { text: "Cancel" });
+		const cancelBtn = footer.createEl("button", { text: copyText(this.plugin.settings.designCopy, "st.deleteCancel") });
 		cancelBtn.onclick = () => this.close();
-		const deleteBtn = footer.createEl("button", { text: "Delete", cls: "mod-warning" });
+		deleteBtn = footer.createEl("button", { text: copyText(this.plugin.settings.designCopy, "st.deleteConfirmBtn"), cls: "mod-warning" });
+		deleteBtn.disabled = needsTypedConfirm;
+		if (confirmInput) {
+			confirmInput.addEventListener("input", () => {
+				deleteBtn.disabled = confirmInput!.value !== this.habitName;
+			});
+		}
 		deleteBtn.onclick = () => {
+			if (needsTypedConfirm && confirmInput?.value !== this.habitName) return;
 			this.onConfirm();
 			this.close();
 		};
@@ -1735,6 +2086,406 @@ class ConfirmDeleteModal extends Modal {
 
 	onClose() {
 		this.contentEl.empty();
+	}
+}
+
+// ---- Design Tweaks panel ----
+// A floating, draggable overlay (not a Modal) on purpose: a modal would
+// cover the tracker and gate interaction behind a backdrop, and the whole
+// point is watching real cards change under the slider you're dragging.
+// Appended to document.body so it survives block re-renders and floats
+// above whatever pane the tracker is in.
+class TweakPanel {
+	plugin: HabitTrackerPlugin;
+	el: HTMLElement;
+	// Working copy. Only committed to settings on Save, so experimenting
+	// never persists by accident — but it IS applied live, so what you see
+	// is always the working copy, not the saved one.
+	draft: Record<string, string>;
+	// Copy overrides get their own draft. Unlike design tokens (which are
+	// pure CSS and repaint for free), changing a string requires a real
+	// re-render, so these two are applied by different paths — see
+	// applyLive() vs applyCopyLive().
+	copyDraft: Record<string, string>;
+	private onKeydown: (e: KeyboardEvent) => void;
+	private static openInstance: TweakPanel | null = null;
+
+	// What was persisted when the panel opened. close() restores this so an
+	// unsaved copy experiment doesn't survive; Save refreshes it.
+	private savedCopySnapshot: Record<string, string>;
+
+	constructor(plugin: HabitTrackerPlugin) {
+		this.plugin = plugin;
+		this.draft = { ...plugin.settings.designTweaks };
+		this.copyDraft = { ...plugin.settings.designCopy };
+		this.savedCopySnapshot = { ...plugin.settings.designCopy };
+	}
+
+	static toggle(plugin: HabitTrackerPlugin) {
+		if (TweakPanel.openInstance) {
+			TweakPanel.openInstance.close();
+			return;
+		}
+		const panel = new TweakPanel(plugin);
+		TweakPanel.openInstance = panel;
+		panel.open();
+	}
+
+	open() {
+		this.el = document.body.createDiv({ cls: "habit-tweak-panel" });
+		this.renderHeader();
+		const body = this.el.createDiv({ cls: "habit-tweak-body" });
+		TWEAK_GROUPS.forEach((group, i) => this.renderGroup(body, group, i === 0));
+		COPY_GROUPS.forEach((group) => this.renderCopyGroup(body, group));
+		this.renderFooter();
+		this.makeDraggable();
+		this.onKeydown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") this.close();
+		};
+		document.addEventListener("keydown", this.onKeydown);
+	}
+
+	close() {
+		document.removeEventListener("keydown", this.onKeydown);
+		this.el?.remove();
+		if (TweakPanel.openInstance === this) TweakPanel.openInstance = null;
+		// applyCopyLive() mutated the in-memory settings for preview, so
+		// unsaved copy edits have to be rolled back to what was stored when
+		// the panel opened (Save overwrites this snapshot, so saving then
+		// closing keeps the new copy).
+		this.plugin.settings.designCopy = { ...this.savedCopySnapshot };
+		// Any unsaved experimenting is discarded by re-applying what's
+		// actually stored — otherwise closing would silently leave the
+		// draft on screen until the next full reload.
+		this.plugin.refreshAll();
+	}
+
+	// Writes the draft to every open tracker block immediately. This is the
+	// live-preview mechanism: no persist, no re-render, just custom
+	// properties on each root.
+	private applyLive() {
+		document.querySelectorAll<HTMLElement>(".habit-tracker-root").forEach((root) => applyTweaksTo(root, this.draft));
+	}
+
+	private set(id: string, value: string) {
+		const def = TWEAK_SPEC.find((t) => t.id === id);
+		if (def && value === def.def) delete this.draft[id];
+		else this.draft[id] = value;
+		this.applyLive();
+		this.refreshChangedCount();
+	}
+
+	private changedCount(): number {
+		const tweaks = TWEAK_SPEC.filter((t) => this.draft[t.id] !== undefined && this.draft[t.id] !== t.def).length;
+		const copy = COPY_SPEC.filter((c) => this.copyDraft[c.id] !== undefined && this.copyDraft[c.id] !== c.def).length;
+		return tweaks + copy;
+	}
+
+	private countEl: HTMLElement;
+
+	private refreshChangedCount() {
+		if (!this.countEl) return;
+		const n = this.changedCount();
+		this.countEl.setText(n === 0 ? "matching shipped defaults" : `${n} change${n === 1 ? "" : "s"} from default`);
+		this.countEl.toggleClass("habit-tweak-count-dirty", n > 0);
+	}
+
+	private renderHeader() {
+		const header = this.el.createDiv({ cls: "habit-tweak-header" });
+		const titleWrap = header.createDiv({ cls: "habit-tweak-title-wrap" });
+		titleWrap.createDiv({ cls: "habit-tweak-title", text: "Design Tweaks" });
+		this.countEl = titleWrap.createDiv({ cls: "habit-tweak-count" });
+		const closeBtn = header.createEl("button", { cls: "habit-tweak-close", text: "✕" });
+		closeBtn.setAttr("aria-label", "Close Design Tweaks");
+		closeBtn.onclick = () => this.close();
+		this.refreshChangedCount();
+	}
+
+	private renderGroup(parent: HTMLElement, group: string, startOpen: boolean) {
+		const section = parent.createDiv({ cls: "habit-tweak-section" });
+		const head = section.createDiv({ cls: "habit-tweak-section-head" });
+		head.setAttr("tabindex", "0");
+		head.setAttr("role", "button");
+		const caret = head.createSpan({ cls: "habit-tweak-caret", text: startOpen ? "▾" : "▸" });
+		head.createSpan({ text: group });
+		const content = section.createDiv({ cls: "habit-tweak-section-body" });
+		if (!startOpen) content.addClass("habit-tweak-hidden");
+		const toggle = () => {
+			const nowHidden = content.hasClass("habit-tweak-hidden");
+			content.toggleClass("habit-tweak-hidden", !nowHidden);
+			caret.setText(nowHidden ? "▾" : "▸");
+			head.setAttr("aria-expanded", nowHidden ? "true" : "false");
+		};
+		head.onclick = toggle;
+		head.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				toggle();
+			}
+		});
+		head.setAttr("aria-expanded", startOpen ? "true" : "false");
+
+		TWEAK_SPEC.filter((t) => t.group === group).forEach((def) => this.renderControl(content, def));
+	}
+
+	// Copy groups are collapsed by default — there are far more strings than
+	// design knobs, and the everyday use of this panel is visual tuning.
+	private renderCopyGroup(parent: HTMLElement, group: string) {
+		const section = parent.createDiv({ cls: "habit-tweak-section" });
+		const head = section.createDiv({ cls: "habit-tweak-section-head" });
+		head.setAttr("tabindex", "0");
+		head.setAttr("role", "button");
+		head.setAttr("aria-expanded", "false");
+		const caret = head.createSpan({ cls: "habit-tweak-caret", text: "▸" });
+		head.createSpan({ text: group });
+		const content = section.createDiv({ cls: "habit-tweak-section-body habit-tweak-hidden" });
+		const toggle = () => {
+			const nowHidden = content.hasClass("habit-tweak-hidden");
+			content.toggleClass("habit-tweak-hidden", !nowHidden);
+			caret.setText(nowHidden ? "▾" : "▸");
+			head.setAttr("aria-expanded", nowHidden ? "true" : "false");
+		};
+		head.onclick = toggle;
+		head.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				toggle();
+			}
+		});
+		COPY_SPEC.filter((c) => c.group === group).forEach((def) => this.renderCopyControl(content, def));
+	}
+
+	private renderCopyControl(parent: HTMLElement, def: CopyDef) {
+		const row = parent.createDiv({ cls: "habit-tweak-row habit-tweak-row-copy" });
+		const labelRow = row.createDiv({ cls: "habit-tweak-copy-labelrow" });
+		labelRow.createSpan({ cls: "habit-tweak-label", text: def.label });
+		if (def.vars?.length) {
+			// Placeholders are shown inline rather than in a tooltip: they're
+			// the one thing you must not delete, so they shouldn't be hidden
+			// behind a hover on a text field you're about to rewrite.
+			labelRow.createSpan({ cls: "habit-tweak-vars", text: def.vars.map((v) => `{${v}}`).join(" ") });
+		}
+		if (def.help) labelRow.setAttr("title", def.help);
+
+		const current = copyText(this.copyDraft, def.id);
+		const input = def.multiline
+			? row.createEl("textarea", { cls: "habit-tweak-textarea" })
+			: row.createEl("input", { cls: "habit-tweak-text", type: "text" });
+		input.value = current;
+		if (def.multiline) (input as HTMLTextAreaElement).rows = Math.min(6, Math.ceil(current.length / 46) + 1);
+
+		const commit = () => {
+			const v = input.value;
+			// An emptied field means "go back to shipped" rather than
+			// "render nothing" — blanking a label by accident would leave an
+			// unlabelled control with no way to tell what it was.
+			if (v === def.def || v.trim() === "") {
+				delete this.copyDraft[def.id];
+				if (v.trim() === "") input.value = def.def;
+			} else {
+				this.copyDraft[def.id] = v;
+			}
+			this.applyCopyLive();
+			this.refreshChangedCount();
+		};
+		input.addEventListener("change", commit);
+		input.addEventListener("blur", commit);
+	}
+
+	// Copy changes can't be repainted like custom properties — the strings
+	// are baked into the DOM at render time — so this commits the draft to
+	// settings-in-memory and forces a rebuild. Not persisted until Save;
+	// close() re-reads from disk to discard.
+	private applyCopyLive() {
+		this.plugin.settings.designCopy = { ...this.copyDraft };
+		this.plugin.refreshAll();
+	}
+
+	private renderControl(parent: HTMLElement, def: TweakDef) {
+		const row = parent.createDiv({ cls: "habit-tweak-row" });
+		const labelWrap = row.createDiv({ cls: "habit-tweak-label-wrap" });
+		const label = labelWrap.createDiv({ cls: "habit-tweak-label", text: def.label });
+		if (def.help) label.setAttr("title", def.help);
+		const valueEl = labelWrap.createDiv({ cls: "habit-tweak-value" });
+		const control = row.createDiv({ cls: "habit-tweak-control" });
+		const current = tweakValue(this.draft, def.id);
+
+		const markValue = (v: string) => {
+			if (def.kind === "range") valueEl.setText(`${v}${def.unit ?? ""}`);
+			else if (def.kind === "toggle") valueEl.setText(v === "on" ? "on" : "off");
+			else if (def.kind === "color") valueEl.setText(v);
+			else valueEl.setText("");
+		};
+		markValue(current);
+
+		if (def.kind === "color") {
+			const swatch = control.createEl("input", { cls: "habit-tweak-color", type: "color" });
+			swatch.value = current;
+			const hex = control.createEl("input", { cls: "habit-tweak-hex", type: "text" });
+			hex.value = current;
+			swatch.addEventListener("input", () => {
+				hex.value = swatch.value;
+				markValue(swatch.value);
+				this.set(def.id, swatch.value);
+			});
+			hex.addEventListener("change", () => {
+				// Only accept a well-formed hex; anything else snaps back so
+				// a half-typed value can't blank out a color mid-edit.
+				if (!/^#[0-9a-fA-F]{6}$/.test(hex.value.trim())) {
+					hex.value = tweakValue(this.draft, def.id);
+					return;
+				}
+				swatch.value = hex.value.trim();
+				markValue(hex.value.trim());
+				this.set(def.id, hex.value.trim());
+			});
+		} else if (def.kind === "range") {
+			const slider = control.createEl("input", { cls: "habit-tweak-range", type: "range" });
+			slider.min = String(def.min ?? 0);
+			slider.max = String(def.max ?? 100);
+			slider.step = String(def.step ?? 1);
+			slider.value = current;
+			slider.addEventListener("input", () => {
+				markValue(slider.value);
+				this.set(def.id, slider.value);
+			});
+		} else if (def.kind === "toggle") {
+			const btn = control.createEl("button", { cls: "habit-tweak-toggle" });
+			const paint = (v: string) => {
+				btn.toggleClass("habit-tweak-toggle-on", v === "on");
+				btn.setText(v === "on" ? "On" : "Off");
+				btn.setAttr("aria-pressed", v === "on" ? "true" : "false");
+			};
+			paint(current);
+			btn.onclick = () => {
+				const next = tweakValue(this.draft, def.id) === "on" ? "off" : "on";
+				paint(next);
+				markValue(next);
+				this.set(def.id, next);
+			};
+		} else {
+			// select + font share the same widget; font just has long values.
+			const sel = control.createEl("select", { cls: "habit-tweak-select" });
+			(def.options ?? []).forEach((opt) => {
+				const o = sel.createEl("option", { text: opt.label });
+				o.value = opt.value;
+			});
+			sel.value = current;
+			if (def.kind === "font") sel.style.fontFamily = current;
+			sel.addEventListener("change", () => {
+				if (def.kind === "font") sel.style.fontFamily = sel.value;
+				this.set(def.id, sel.value);
+			});
+		}
+	}
+
+	private renderFooter() {
+		const footer = this.el.createDiv({ cls: "habit-tweak-footer" });
+
+		const saveBtn = footer.createEl("button", { cls: "habit-tweak-btn habit-tweak-btn-cta", text: "Save" });
+		saveBtn.onclick = async () => {
+			this.plugin.settings.designTweaks = { ...this.draft };
+			this.plugin.settings.designCopy = { ...this.copyDraft };
+			this.savedCopySnapshot = { ...this.copyDraft };
+			await this.plugin.persist();
+			this.plugin.refreshAll();
+			new Notice(`Design saved — ${this.changedCount()} tweak(s) applied.`);
+		};
+
+		const copyBtn = footer.createEl("button", { cls: "habit-tweak-btn", text: "Copy CSS" });
+		copyBtn.onclick = async () => {
+			const css = this.exportCss();
+			await navigator.clipboard.writeText(css);
+			new Notice("CSS copied — paste it into styles.css to make it the default.");
+		};
+
+		const resetBtn = footer.createEl("button", { cls: "habit-tweak-btn habit-tweak-btn-warn", text: "Reset" });
+		resetBtn.onclick = () => {
+			this.draft = {};
+			this.copyDraft = {};
+			this.applyLive();
+			this.applyCopyLive();
+			this.el.empty();
+			this.renderHeader();
+			const body = this.el.createDiv({ cls: "habit-tweak-body" });
+			TWEAK_GROUPS.forEach((g, i) => this.renderGroup(body, g, i === 0));
+			COPY_GROUPS.forEach((g) => this.renderCopyGroup(body, g));
+			this.renderFooter();
+			new Notice("Reverted to shipped defaults (not saved yet).");
+		};
+	}
+
+	// Emits only what differs from the shipped design, as a paste-ready
+	// block — a full dump would be noise, and would also silently freeze
+	// values that should keep tracking future default changes.
+	private exportCss(): string {
+		const vars: string[] = [];
+		const classes: string[] = [];
+		for (const def of TWEAK_SPEC) {
+			const v = this.draft[def.id];
+			if (v === undefined || v === def.def) continue;
+			if (def.cssVar) {
+				vars.push(`\t${def.cssVar}: ${v}${def.unit && def.kind === "range" ? def.unit : ""};`);
+			} else if (def.bodyClass) {
+				classes.push(
+					def.kind === "toggle"
+						? `${def.label}: ${v} → class .${def.bodyClass}`
+						: `${def.label}: ${v} → class .${def.bodyClass}-${v}`
+				);
+			} else {
+				classes.push(`${def.label}: ${v} (behavioral — set in plugin settings, no CSS)`);
+			}
+		}
+		const copyLines: string[] = [];
+		for (const def of COPY_SPEC) {
+			const v = this.copyDraft[def.id];
+			if (v === undefined || v === def.def) continue;
+			copyLines.push(`\t{ id: "${def.id}", def: ${JSON.stringify(v)} },`);
+		}
+		if (!vars.length && !classes.length && !copyLines.length) return "/* No changes from the shipped design. */";
+		let out = "";
+		if (vars.length) out += `.habit-tracker-root {\n${vars.join("\n")}\n}\n`;
+		if (classes.length) out += `\n/* Structural tweaks (applied as classes by applyTweaksTo):\n${classes.map((c) => `   ${c}`).join("\n")}\n*/\n`;
+		if (copyLines.length) out += `\n/* Copy overrides — paste these \`def\` values into COPY_SPEC in main.ts:\n${copyLines.join("\n")}\n*/\n`;
+		return out;
+	}
+
+	private makeDraggable() {
+		const header = this.el.querySelector<HTMLElement>(".habit-tweak-header");
+		if (!header) return;
+		let startX = 0;
+		let startY = 0;
+		let originLeft = 0;
+		let originTop = 0;
+		let dragging = false;
+
+		const onMove = (e: MouseEvent) => {
+			if (!dragging) return;
+			// Clamped so the panel can't be dragged fully off-screen and
+			// stranded — its header has to stay grabbable.
+			const maxLeft = window.innerWidth - 80;
+			const maxTop = window.innerHeight - 40;
+			this.el.style.left = `${Math.min(Math.max(originLeft + e.clientX - startX, -240), maxLeft)}px`;
+			this.el.style.top = `${Math.min(Math.max(originTop + e.clientY - startY, 0), maxTop)}px`;
+			this.el.style.right = "auto";
+		};
+		const onUp = () => {
+			dragging = false;
+			document.removeEventListener("mousemove", onMove);
+			document.removeEventListener("mouseup", onUp);
+		};
+		header.addEventListener("mousedown", (e: MouseEvent) => {
+			if ((e.target as HTMLElement).closest("button")) return;
+			dragging = true;
+			startX = e.clientX;
+			startY = e.clientY;
+			const rect = this.el.getBoundingClientRect();
+			originLeft = rect.left;
+			originTop = rect.top;
+			document.addEventListener("mousemove", onMove);
+			document.addEventListener("mouseup", onUp);
+			e.preventDefault();
+		});
 	}
 }
 
@@ -2085,6 +2836,15 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	// above — whether this block is currently in drag-to-reorder mode.
 	// Resets to false on every fresh block load, never persisted.
 	reorderModeActive: boolean = false;
+	// Ids of habits whose Four Laws formula panel is currently expanded on
+	// this block. Same in-memory-only, resets-on-load pattern as the fields
+	// above — the collapsed default is deliberate (see renderHabit), so
+	// persisting an expanded state would defeat the point.
+	expandedLevers: Set<string> = new Set();
+	// Counterpart to expandedLevers, used when the Design Tweaks
+	// "Formula starts" default is Expanded — then we track who's been
+	// explicitly closed instead. See toggleLevers in renderHabit.
+	collapsedLevers: Set<string> = new Set();
 	// Id of the habit currently being dragged, while a drag gesture is in
 	// progress. Kept as plain block-level state rather than round-tripping
 	// through event.dataTransfer.getData() on dragover/drop — Obsidian's
@@ -2130,6 +2890,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		el.empty();
 		el.addClass("habit-tracker-root");
+		// Design Tweaks land here rather than in a stylesheet: inline custom
+		// properties on the block root, so every card/cell/control below
+		// recalculates from them without any extra render work.
+		applyTweaksTo(el, this.plugin.settings.designTweaks);
 
 		const data = this.plugin.data;
 		const allItems = this.filterName
@@ -2156,7 +2920,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			walkthroughBtn.onclick = () => this.showAddHabitIntro();
 		}
 		const toggle = leftGroup.createDiv({ cls: "habit-tracker-view-toggle" });
-		const modeLabels: Record<ViewMode, string> = { week: "Week", month: "Month", year: "Year", yeardays: "Year - Days" };
+		const modeLabels: Record<ViewMode, string> = { week: copyText(this.plugin.settings.designCopy, "tb.week"), month: copyText(this.plugin.settings.designCopy, "tb.month"), year: copyText(this.plugin.settings.designCopy, "tb.year"), yeardays: copyText(this.plugin.settings.designCopy, "tb.yeardays") };
 		(["week", "month", "year", "yeardays"] as ViewMode[]).forEach((mode) => {
 			const b = toggle.createEl("button", {
 				text: modeLabels[mode],
@@ -2191,7 +2955,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.render();
 			};
 			if (this.selectedMonthOffset !== 0) {
-				const todayBtn = monthNav.createEl("button", { text: "Today", cls: "habit-tracker-view-today-btn" });
+				const todayBtn = monthNav.createEl("button", { text: copyText(this.plugin.settings.designCopy, "tb.today"), cls: "habit-tracker-view-today-btn" });
 				todayBtn.type = "button";
 				todayBtn.setAttr("aria-label", "Back to current month");
 				todayBtn.onclick = () => {
@@ -2227,7 +2991,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.render();
 			};
 			if (this.selectedWeekOffset !== 0) {
-				const todayBtn = weekNav.createEl("button", { text: "Today", cls: "habit-tracker-view-today-btn" });
+				const todayBtn = weekNav.createEl("button", { text: copyText(this.plugin.settings.designCopy, "tb.today"), cls: "habit-tracker-view-today-btn" });
 				todayBtn.type = "button";
 				todayBtn.setAttr("aria-label", "Back to current week");
 				todayBtn.onclick = () => {
@@ -2259,7 +3023,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				this.render();
 			};
 			if (this.selectedYearOffset !== 0) {
-				const todayBtn = yearNav.createEl("button", { text: "Today", cls: "habit-tracker-view-today-btn" });
+				const todayBtn = yearNav.createEl("button", { text: copyText(this.plugin.settings.designCopy, "tb.today"), cls: "habit-tracker-view-today-btn" });
 				todayBtn.type = "button";
 				todayBtn.setAttr("aria-label", "Back to current year");
 				todayBtn.onclick = () => {
@@ -2271,7 +3035,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		if (!this.filterName) {
 			const reorderBtn = toggleRow.createEl("button", {
-				text: "⠿ Reorder",
+				text: copyText(this.plugin.settings.designCopy, "tb.reorder"),
 				cls: "habit-tracker-reorder-btn" + (this.reorderModeActive ? " habit-tracker-reorder-btn-active" : ""),
 			});
 			reorderBtn.type = "button";
@@ -2290,16 +3054,16 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const visibleCount = habits.length + pendingTasks.length + doneTasks.length;
 		if (visibleCount === 0 && !this.filterName) {
 			const empty = el.createDiv({ cls: "habit-tracker-empty" });
-			empty.createDiv({ text: "🌱", cls: "habit-tracker-empty-icon" });
-			empty.createDiv({ text: "No habits yet", cls: "habit-tracker-empty-title" });
+			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyIcon"), cls: "habit-tracker-empty-icon" });
+			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyTitle"), cls: "habit-tracker-empty-title" });
 			empty.createDiv({
-				text: "Every streak starts with day one — add your first habit below to get started.",
+				text: copyText(this.plugin.settings.designCopy, "st.emptyBody"),
 				cls: "habit-tracker-empty-subtitle",
 			});
 		} else if (visibleCount === 0 && this.filterName) {
 			const empty = el.createDiv({ cls: "habit-tracker-empty" });
-			empty.createDiv({ text: "🔍", cls: "habit-tracker-empty-icon" });
-			empty.createDiv({ text: `No habit named "${this.filterName}" yet`, cls: "habit-tracker-empty-title" });
+			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyFilterIcon"), cls: "habit-tracker-empty-icon" });
+			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyFilterTitle", { name: this.filterName ?? "" }), cls: "habit-tracker-empty-title" });
 		}
 
 		const list = el.createDiv({ cls: "habit-tracker-list" });
@@ -2311,7 +3075,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 
 		if (doneTasks.length > 0) {
-			const doneToggle = el.createDiv({ cls: "habit-tracker-done-toggle", text: `✅ Done (${doneTasks.length})` });
+			const doneToggle = el.createDiv({ cls: "habit-tracker-done-toggle", text: copyText(this.plugin.settings.designCopy, "st.doneSection", { n: doneTasks.length }) });
 			const doneSection = el.createDiv({ cls: "habit-tracker-done-section" });
 			for (const task of doneTasks) {
 				this.renderTask(doneSection, task, today);
@@ -2324,7 +3088,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		if (!this.filterName) {
 			const addCard = list.createDiv({ cls: "habit-tracker-add-card" });
 			addCard.createSpan({ text: "+", cls: "habit-tracker-add-icon" });
-			addCard.createSpan({ text: "Add habit", cls: "habit-tracker-add-label" });
+			addCard.createSpan({ text: copyText(this.plugin.settings.designCopy, "tb.addHabit"), cls: "habit-tracker-add-label" });
 			addCard.onclick = () => {
 				const fromIntro = this.pendingWalkthroughIntro;
 				if (fromIntro) {
@@ -2417,7 +3181,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		addCard.scrollIntoView({ block: "center", behavior: "smooth" });
 
 		const tooltip = this.containerEl.createDiv({ cls: "habit-tracker-walkthrough-tooltip habit-tracker-block-walkthrough-tooltip" });
-		tooltip.createDiv({ text: "👇 Click \"+ Add habit\" below to start", cls: "habit-tracker-walkthrough-title" });
+		tooltip.createDiv({ text: copyText(this.plugin.settings.designCopy, "wt.intro"), cls: "habit-tracker-walkthrough-title" });
 		const dismissBtn = tooltip.createEl("button", { text: "Never mind", cls: "habit-tracker-walkthrough-skip" });
 		dismissBtn.type = "button";
 		dismissBtn.onclick = () => {
@@ -2590,7 +3354,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		const deleteBtn = header.createSpan({ text: "🗑", cls: "habit-tracker-delete-btn" });
 		deleteBtn.setAttr("aria-label", "Delete task");
 		deleteBtn.onclick = () => {
-			new ConfirmDeleteModal(this.plugin.app, task.name, async () => {
+			// Tasks are one-off, not streak history — always a quick confirm.
+			new ConfirmDeleteModal(this.plugin, task.name, 0, async () => {
 				this.plugin.data.habits = this.plugin.data.habits.filter((h) => h.id !== task.id);
 				delete this.plugin.data.entries[task.id];
 				await this.plugin.persist();
@@ -2617,9 +3382,17 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 		if (task.linkedGoal) {
 			const goalLink = row.createDiv({ text: `🎯 ${task.linkedGoal}`, cls: "habit-tracker-meta-line habit-tracker-goal-link" });
-			goalLink.onclick = () => {
-				this.plugin.app.workspace.openLinkText(task.linkedGoal!, "", false);
-			};
+			const openGoal = () => this.plugin.app.workspace.openLinkText(task.linkedGoal!, "", false);
+			goalLink.onclick = openGoal;
+			goalLink.setAttr("tabindex", "0");
+			goalLink.setAttr("role", "link");
+			goalLink.setAttr("aria-label", `Open goal: ${task.linkedGoal}`);
+			goalLink.addEventListener("keydown", (e: KeyboardEvent) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					openGoal();
+				}
+			});
 		}
 	}
 
@@ -2649,36 +3422,46 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		dot.style.backgroundColor = habit.color;
 		titleRow.createSpan({ text: habitDisplayName(habit), cls: "habit-tracker-name" });
 		titleRow.createSpan({
-			text: isBreak ? "BREAK" : "BUILD",
+			text: copyText(this.plugin.settings.designCopy, isBreak ? "card.break" : "card.build"),
 			cls: "habit-tracker-type-badge" + (isBreak ? " habit-tracker-type-badge-break" : " habit-tracker-type-badge-build"),
 		});
 
+		// Primary row: only the two numbers that matter for a daily glance
+		// (current streak, lifetime votes). best/week/month/year are real
+		// and still one click away, but they were previously six co-equal
+		// pills competing for attention — a design-review finding — so they
+		// move to a visually demoted secondary row below instead.
 		const statsRow = header.createDiv({ cls: "habit-tracker-stats-row" });
 		const streakPill = statsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-streak" });
-		streakPill.createSpan({ text: isBreak ? "🛡️" : "🔥", cls: "habit-tracker-pill-icon" });
+		streakPill.createSpan({ text: copyText(this.plugin.settings.designCopy, isBreak ? "stat.cleanIcon" : "stat.streakIcon"), cls: "habit-tracker-pill-icon" });
 		streakPill.createSpan({ text: `${stats.streak}`, cls: "habit-tracker-pill-value" });
-		streakPill.createSpan({ text: isBreak ? "clean" : "streak", cls: "habit-tracker-pill-label" });
+		streakPill.createSpan({ text: copyText(this.plugin.settings.designCopy, isBreak ? "stat.clean" : "stat.streak"), cls: "habit-tracker-pill-label" });
 
-		const bestPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
-		bestPill.createSpan({ text: "🏆", cls: "habit-tracker-pill-icon" });
-		bestPill.createSpan({ text: `${stats.bestStreak}`, cls: "habit-tracker-pill-value" });
-		bestPill.createSpan({ text: "best", cls: "habit-tracker-pill-label" });
-
-		const weekPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
-		weekPill.createSpan({ text: `${stats.totalThisWeek}`, cls: "habit-tracker-pill-value" });
-		weekPill.createSpan({ text: "this week", cls: "habit-tracker-pill-label" });
-
-		const monthPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
-		monthPill.createSpan({ text: `${stats.totalThisMonth}`, cls: "habit-tracker-pill-value" });
-		monthPill.createSpan({ text: "this month", cls: "habit-tracker-pill-label" });
-
-		const totalPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
+		const totalPill = statsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-votes" });
 		totalPill.createSpan({ text: `${stats.total}`, cls: "habit-tracker-pill-value" });
-		totalPill.createSpan({ text: "votes", cls: "habit-tracker-pill-label" });
+		totalPill.createSpan({ text: copyText(this.plugin.settings.designCopy, "stat.votes"), cls: "habit-tracker-pill-label" });
 
-		const yearPill = statsRow.createDiv({ cls: "habit-tracker-pill" });
+		// Appended to `card`, not `header` — header is a flex row shared
+		// with the title and edit/delete actions, and a second full-width
+		// row of pills would compete with those for header's own flex-wrap
+		// layout. Sitting below the header as its own block avoids that.
+		const secondaryStatsRow = card.createDiv({ cls: "habit-tracker-stats-row habit-tracker-stats-row-secondary" });
+		const bestPill = secondaryStatsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-best" });
+		bestPill.createSpan({ text: copyText(this.plugin.settings.designCopy, "stat.bestIcon"), cls: "habit-tracker-pill-icon" });
+		bestPill.createSpan({ text: `${stats.bestStreak}`, cls: "habit-tracker-pill-value" });
+		bestPill.createSpan({ text: copyText(this.plugin.settings.designCopy, "stat.best"), cls: "habit-tracker-pill-label" });
+
+		const weekPill = secondaryStatsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-week" });
+		weekPill.createSpan({ text: `${stats.totalThisWeek}`, cls: "habit-tracker-pill-value" });
+		weekPill.createSpan({ text: copyText(this.plugin.settings.designCopy, "stat.week"), cls: "habit-tracker-pill-label" });
+
+		const monthPill = secondaryStatsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-month" });
+		monthPill.createSpan({ text: `${stats.totalThisMonth}`, cls: "habit-tracker-pill-value" });
+		monthPill.createSpan({ text: copyText(this.plugin.settings.designCopy, "stat.month"), cls: "habit-tracker-pill-label" });
+
+		const yearPill = secondaryStatsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-year" });
 		yearPill.createSpan({ text: `${stats.totalThisYear}`, cls: "habit-tracker-pill-value" });
-		yearPill.createSpan({ text: "this year", cls: "habit-tracker-pill-label" });
+		yearPill.createSpan({ text: copyText(this.plugin.settings.designCopy, "stat.year"), cls: "habit-tracker-pill-label" });
 
 		// Own container, deliberately kept separate from statsRow — the
 		// number of stat pills can grow (and does, per-habit-type), and
@@ -2756,7 +3539,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		deleteBtn.setAttr("aria-label", "Delete habit");
 		deleteBtn.onclick = () => {
 			if (this.reorderModeActive) return;
-			new ConfirmDeleteModal(this.plugin.app, habitDisplayName(habit), async () => {
+			new ConfirmDeleteModal(this.plugin, habitDisplayName(habit), Object.keys(entries).length, async () => {
 				this.plugin.data.habits = this.plugin.data.habits.filter((h) => h.id !== habit.id);
 				delete this.plugin.data.entries[habit.id];
 				this.yearScrollByHabit.delete(habit.id);
@@ -2778,42 +3561,95 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			milestoneBubble.remove();
 		} else if (milestones.includes(stats.streak)) {
 			milestoneBubble.addClass("habit-tracker-milestone-bubble-achieved");
-			milestoneBubble.setText(`🎉 ${stats.streak}-Day Milestone Achieved!`);
+			milestoneBubble.setText(copyText(this.plugin.settings.designCopy, "ms.achieved", { n: stats.streak }));
 		} else {
 			const nextMilestone = milestones.find((m) => m > stats.streak);
 			if (nextMilestone !== undefined) {
 				const daysLeft = nextMilestone - stats.streak;
-				milestoneBubble.setText(`🎯 ${daysLeft} ${daysLeft === 1 ? "day" : "days"} to next milestone`);
+				milestoneBubble.setText(copyText(this.plugin.settings.designCopy, "ms.next", { n: daysLeft, dayWord: daysLeft === 1 ? "day" : "days" }));
 			} else {
 				milestoneBubble.addClass("habit-tracker-milestone-bubble-achieved");
-				milestoneBubble.setText("🏆 All milestones achieved!");
+				milestoneBubble.setText(copyText(this.plugin.settings.designCopy, "ms.allDone"));
 			}
 		}
 
 		// Atomic Habits detail line(s) — only rendered when set, so a habit
 		// with none of these looks exactly as plain as before.
+		//
+		// The identity line stays permanently visible: it's the "who you're
+		// becoming" anchor and the whole point of the system. The Four Laws
+		// levers below it (cue/craving/routine/reward/goal) collapse behind
+		// a toggle instead of re-rendering in full every day forever — they
+		// matter most at creation/review time, and previously crowded out
+		// the one thing a daily glance actually needs (is today checked in).
+		// Expanded state is per-habit, in-memory only, same pattern as
+		// currentView/reorderModeActive — resets on a fresh block load.
 		if (habit.identity) {
-			card.createDiv({ text: `→ ${habit.identity}`, cls: "habit-tracker-identity" });
+			card.createDiv({ text: copyText(this.plugin.settings.designCopy, "card.identityPrefix") + habit.identity, cls: "habit-tracker-identity" });
 		}
-		const triggerBits: string[] = [];
-		if (habit.stackedAfter) triggerBits.push(`⛓ Cue: ${habit.stackedAfter}`);
-		if (triggerBits.length) {
-			card.createDiv({ text: triggerBits.join("   ·   "), cls: "habit-tracker-meta-line" });
-		}
-		if (habit.craving) {
-			card.createDiv({ text: `🍯 Craving: ${habit.craving}`, cls: "habit-tracker-meta-line" });
-		}
-		if (habit.minimumVersion) {
-			card.createDiv({ text: `💡 Routine: ${habit.minimumVersion}`, cls: "habit-tracker-meta-line" });
-		}
-		if (habit.reward) {
-			card.createDiv({ text: `🎉 Reward: ${habit.reward}`, cls: "habit-tracker-meta-line" });
-		}
-		if (habit.linkedGoal) {
-			const goalLink = card.createDiv({ text: `🎯 ${habit.linkedGoal}`, cls: "habit-tracker-meta-line habit-tracker-goal-link" });
-			goalLink.onclick = () => {
-				this.plugin.app.workspace.openLinkText(habit.linkedGoal!, "", false);
+
+		const leverBits: Array<{ text: string; goal?: boolean }> = [];
+		if (habit.stackedAfter) leverBits.push({ text: copyText(this.plugin.settings.designCopy, "card.cuePrefix") + habit.stackedAfter });
+		if (habit.craving) leverBits.push({ text: copyText(this.plugin.settings.designCopy, "card.cravingPrefix") + habit.craving });
+		if (habit.minimumVersion) leverBits.push({ text: copyText(this.plugin.settings.designCopy, "card.routinePrefix") + habit.minimumVersion });
+		if (habit.reward) leverBits.push({ text: copyText(this.plugin.settings.designCopy, "card.rewardPrefix") + habit.reward });
+		if (habit.linkedGoal) leverBits.push({ text: copyText(this.plugin.settings.designCopy, "card.goalPrefix") + habit.linkedGoal, goal: true });
+
+		if (leverBits.length) {
+			// Default open/closed comes from the Design Tweaks panel; the
+			// per-habit toggle still wins once the user touches it, tracked
+			// in collapsedLevers/expandedLevers depending on which way the
+			// default points.
+			const defaultOpen = tweakValue(this.plugin.settings.designTweaks, "formulaDefault") === "open";
+			const expanded = defaultOpen ? !this.collapsedLevers.has(habit.id) : this.expandedLevers.has(habit.id);
+			const toggle = card.createDiv({
+				cls: "habit-tracker-levers-toggle",
+				text: expanded ? copyText(this.plugin.settings.designCopy, "card.formulaHide") : copyText(this.plugin.settings.designCopy, "card.formulaShow", { n: leverBits.length }),
+			});
+			toggle.setAttr("tabindex", "0");
+			toggle.setAttr("role", "button");
+			toggle.setAttr("aria-expanded", expanded ? "true" : "false");
+			const toggleLevers = () => {
+				// Two sets rather than one, because "toggled" means the
+				// opposite thing depending on which way the default points:
+				// with a closed default we track who's been opened, with an
+				// open default we track who's been closed. Flipping the
+				// default in the panel then re-reads correctly instead of
+				// inverting everyone's existing choice.
+				const set = defaultOpen ? this.collapsedLevers : this.expandedLevers;
+				if (set.has(habit.id)) set.delete(habit.id);
+				else set.add(habit.id);
+				this.render();
 			};
+			toggle.onclick = toggleLevers;
+			toggle.addEventListener("keydown", (e: KeyboardEvent) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					toggleLevers();
+				}
+			});
+
+			if (expanded) {
+				const leversWrap = card.createDiv({ cls: "habit-tracker-levers-panel" });
+				leverBits.forEach((bit) => {
+					if (!bit.goal) {
+						leversWrap.createDiv({ text: bit.text, cls: "habit-tracker-meta-line" });
+						return;
+					}
+					const goalLink = leversWrap.createDiv({ text: bit.text, cls: "habit-tracker-meta-line habit-tracker-goal-link" });
+					const openGoal = () => this.plugin.app.workspace.openLinkText(habit.linkedGoal!, "", false);
+					goalLink.onclick = openGoal;
+					goalLink.setAttr("tabindex", "0");
+					goalLink.setAttr("role", "link");
+					goalLink.setAttr("aria-label", `Open goal: ${habit.linkedGoal}`);
+					goalLink.addEventListener("keydown", (e: KeyboardEvent) => {
+						if (e.key === "Enter" || e.key === " ") {
+							e.preventDefault();
+							openGoal();
+						}
+					});
+				});
+			}
 		}
 
 		const grid = card.createDiv({ cls: "habit-tracker-grid-wrap" });
@@ -3040,14 +3876,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				: "habit-tracker-cell";
 		const cell = gridEl.createDiv({ cls: cellBaseCls });
 		cell.setAttr("data-date", dateStr);
-		// Only show the hover tooltip on the small square cells (year and
-		// year-days) — the week/month cells already print the date
-		// directly, and the tooltip's positioning logic overflows past the
-		// card edge for cells near the left/top border, so it's both
-		// redundant and buggy there.
-		if (!boxed) {
-			cell.setAttr("aria-label", dateStr);
-		}
+		// aria-label is set once state is known, below — every style gets
+		// one (not just the unboxed year/year-days cells that lack a printed
+		// date), since a screen-reader user needs the same done/missed/today
+		// signal a sighted user reads off the cell's fill color.
 
 		if (style === "week") {
 			cell.createDiv({ text: d.toLocaleString("default", { weekday: "short" }), cls: "habit-tracker-week-day-label" });
@@ -3086,14 +3918,37 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				cell.addClass("habit-tracker-cell-at-risk");
 			}
 		}
+
+		// State-aware label for every style (not just the unboxed year/
+		// year-days cells that lack a printed date) — a screen-reader user
+		// needs "done"/"missed"/"today" the same way a sighted user reads it
+		// off the cell's fill color, which boxed week/month cells don't
+		// otherwise convey via their printed date+weekday text alone.
+		const stateWord = entries[dateStr]
+			? entries[dateStr] === "min"
+				? "minimum version done"
+				: "done"
+			: d > today
+			? "upcoming"
+			: dateStr < todayStr()
+			? "missed"
+			: "not yet done today";
+		cell.setAttr("aria-label", `${habitDisplayName(habit)}, ${d.toDateString()}, ${stateWord}`);
+
 		// While reorder mode is active, cell click-to-toggle is disabled
 		// entirely (no handler attached, not just a no-op) so a drag
 		// gesture starting/ending over a cell can never accidentally
 		// register as a habit check-in. The card-level
 		// habit-tracker-habit-reorderable class (styles.css) gives the
-		// whole grid a dimmed, non-interactive look to match.
-		if (this.reorderModeActive) return;
-		cell.onclick = async () => {
+		// whole grid a dimmed, non-interactive look to match. Cells are also
+		// pulled out of tab order in this state (tabindex -1) so reorder
+		// mode doesn't leave a trail of dead focus stops across every card.
+		if (this.reorderModeActive) {
+			cell.setAttr("tabindex", "-1");
+			return;
+		}
+
+		const toggle = async () => {
 			const oldStreak = computeStats(entries).streak;
 			const next = nextEntryValue(entries[dateStr]);
 			if (next === undefined) {
@@ -3127,6 +3982,15 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				if (dateStr === todayStr()) this.plugin.maybeCelebrateAllHabitsDoneToday();
 			}, 160);
 		};
+		cell.onclick = toggle;
+		cell.setAttr("tabindex", "0");
+		cell.setAttr("role", "button");
+		cell.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				toggle();
+			}
+		});
 	}
 }
 
@@ -3254,6 +4118,14 @@ export default class HabitTrackerPlugin extends Plugin {
 		this.registerView(HABIT_TRACKER_VIEW_TYPE, (leaf) => new HabitTrackerView(leaf, this));
 		this.addRibbonIcon("flame", "Open Habit Tracker", () => this.activateView());
 		this.addCommand({ id: "open-habit-tracker", name: "Open Habit Tracker", callback: () => this.activateView() });
+		// Deliberately command-only (no ribbon icon): this is a design tool
+		// for tuning the look, not part of the daily check-in flow, so it
+		// stays out of the way until deliberately summoned.
+		this.addCommand({
+			id: "open-design-tweaks",
+			name: "Design Tweaks (live theme editor)",
+			callback: () => TweakPanel.toggle(this),
+		});
 
 		this.registerMarkdownCodeBlockProcessor("habit-tracker", (source, el, ctx) => {
 			const filterMatch = source.match(/^\s*habit:\s*(.+)\s*$/m);
@@ -3596,7 +4468,7 @@ export default class HabitTrackerPlugin extends Plugin {
 		const allDone = habits.every((h) => !!this.data.entries[h.id]?.[today]);
 		if (!allDone) return;
 		this.lastAllHabitsCongratsDate = today;
-		new DailyCongratsModal(this.app, "habits", habits.length).open();
+		new DailyCongratsModal(this, "habits", habits.length).open();
 	}
 
 	// Same idea for tasks, but keyed per scheduled date rather than just
@@ -3611,6 +4483,6 @@ export default class HabitTrackerPlugin extends Plugin {
 		const allDone = tasksForDate.every((t) => !!this.data.entries[t.id]?.[date]);
 		if (!allDone) return;
 		this.allTasksCongratsShownDates.add(date);
-		new DailyCongratsModal(this.app, "tasks", tasksForDate.length, date).open();
+		new DailyCongratsModal(this, "tasks", tasksForDate.length, date).open();
 	}
 }
