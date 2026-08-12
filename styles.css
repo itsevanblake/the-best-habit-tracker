@@ -655,6 +655,12 @@ body.theme-dark {
 	font-weight: 700;
 	box-shadow: 0 0 20px color-mix(in srgb, var(--htx-gold) 60%, transparent);
 	animation: habit-tracker-celebrate 1.4s ease-out;
+	/* The glow's 20px blur spreads well past the bubble's own box, bleeding
+	   into the pill row above and the heatmap grid below when they sit
+	   right up against it — extra clearance here just for the glowing
+	   (achieved) state, not the plain countdown bubble which has no glow. */
+	margin-top: 10px;
+	margin-bottom: 18px;
 }
 
 .habit-tracker-identity {
