@@ -26,6 +26,35 @@ body.theme-dark {
 	--ht-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
 
+/* ---- Neon arcade identity ----
+   Deliberately its own fixed palette rather than inherited Obsidian theme
+   vars: this surface is meant to read as a distinct, glowing "game panel"
+   embedded in the vault, not as a chameleon that matches whatever theme is
+   active. Scoped under .habit-tracker-root (never global) so nothing here
+   leaks into the rest of Obsidian's chrome. One fixed dark rendition
+   regardless of Obsidian's own light/dark theme, since the whole point is a
+   deliberate near-black arcade ground with neon glow — a light variant
+   would not be the same design, it would be a different one. */
+.habit-tracker-root {
+	--htx-bg: #0a0713;
+	--htx-bg-2: #120a24;
+	--htx-glow-violet: #a855f7;
+	--htx-glow-violet-bright: #c084fc;
+	--htx-violet-soft: #6d28d9;
+	--htx-green: #34d399;
+	--htx-green-bright: #4ade80;
+	--htx-gold: #fbbf24;
+	--htx-gold-bright: #fde68a;
+	--htx-red: #f87171;
+	--htx-card: #150d29;
+	--htx-card-border: color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
+	--htx-text: #f3ecff;
+	--htx-text-muted: #b7a9d9;
+	--htx-text-faint: #8574ad;
+	--htx-font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	--htx-font-body: "DM Sans", "Segoe UI", system-ui, sans-serif;
+}
+
 /* Break the tracker out of Obsidian's "Readable Line Length" column so it
    can use the full width of the pane, not just the constrained text
    column. Only affects notes that actually contain this block. */
@@ -42,9 +71,17 @@ body.theme-dark {
 .habit-tracker-root {
 	position: relative;
 	margin: 1.2em calc(-1 * var(--file-margins, 0px));
-	padding: 0 12px;
+	padding: 18px 16px 16px;
 	font-variant-numeric: tabular-nums;
 	font-size: 1.1em;
+	font-family: var(--htx-font-body);
+	color: var(--htx-text);
+	background:
+		radial-gradient(ellipse 900px 420px at 20% -10%, color-mix(in srgb, var(--htx-glow-violet) 30%, transparent), transparent 65%),
+		radial-gradient(ellipse 700px 500px at 100% 100%, color-mix(in srgb, var(--htx-violet-soft) 22%, transparent), transparent 60%),
+		linear-gradient(180deg, var(--htx-bg-2), var(--htx-bg) 60%);
+	border-radius: var(--ht-radius-xl);
+	border: 1px solid var(--htx-card-border);
 }
 
 .habit-tracker-empty {
@@ -54,7 +91,7 @@ body.theme-dark {
 	gap: var(--ht-space-2);
 	padding: 2.4em var(--ht-space-3);
 	text-align: center;
-	border: 1.5px dashed var(--background-modifier-border);
+	border: 1.5px dashed var(--htx-card-border);
 	border-radius: var(--ht-radius-xl);
 }
 
@@ -65,13 +102,14 @@ body.theme-dark {
 }
 
 .habit-tracker-empty-title {
-	font-weight: 600;
+	font-family: var(--htx-font-display);
+	font-weight: 700;
 	font-size: 1.05em;
-	color: var(--text-normal);
+	color: var(--htx-text);
 }
 
 .habit-tracker-empty-subtitle {
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	font-size: 0.85em;
 	max-width: 32em;
 }
@@ -80,10 +118,10 @@ body.theme-dark {
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
-	/* render() rebuilds this element fresh on every view switch/refresh, so
-	   the animation naturally replays each time rather than needing a class
-	   toggle — a light fade instead of the grid just instantly popping in. */
-	animation: habit-tracker-fade-in 0.15s ease-out;
+	/* No fade-in here (deliberately removed): render() rebuilds this element
+	   fresh on every check-in, including a plain mark/unmark, and the fade's
+	   opacity:0 start briefly exposed the near-black .habit-tracker-root
+	   backdrop underneath — reading as a black flash on every toggle. */
 }
 
 @keyframes habit-tracker-fade-in {
@@ -118,9 +156,9 @@ body.theme-dark {
 	width: 30px;
 	height: 30px;
 	padding: 0;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 	border-radius: var(--ht-radius-md);
-	background-color: var(--background-secondary);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-card));
 	cursor: pointer;
 	font-size: 0.95em;
 	display: flex;
@@ -130,8 +168,8 @@ body.theme-dark {
 }
 
 .habit-tracker-gear-btn:hover {
-	background-color: var(--background-modifier-hover);
-	border-color: var(--interactive-accent);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 22%, var(--htx-card));
+	border-color: var(--htx-glow-violet-bright);
 }
 
 /* Appended to <body>, not .habit-tracker-root, so it centers over the
@@ -152,13 +190,16 @@ body.theme-dark {
 	width: min(340px, calc(100vw - 32px));
 	padding: var(--ht-space-4);
 	border-radius: var(--ht-radius-xl);
-	background-color: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
-	box-shadow: var(--ht-shadow-md);
+	background: linear-gradient(180deg, #120a24, #0a0713);
+	border: 1px solid color-mix(in srgb, #a855f7 30%, transparent);
+	box-shadow: 0 0 32px rgba(168, 85, 247, 0.18), var(--ht-shadow-md);
+	color: #f3ecff;
 }
 
 .habit-tracker-settings-panel h4 {
 	margin: 0 0 var(--ht-space-3);
+	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	color: #f3ecff;
 }
 
 .habit-tracker-settings-row {
@@ -167,6 +208,7 @@ body.theme-dark {
 	gap: 8px;
 	cursor: pointer;
 	font-size: 0.9em;
+	color: #b7a9d9;
 }
 
 .habit-tracker-settings-close {
@@ -176,7 +218,7 @@ body.theme-dark {
 
 .habit-tracker-settings-row input[type="checkbox"] {
 	cursor: pointer;
-	accent-color: var(--interactive-accent);
+	accent-color: #a855f7;
 }
 
 .habit-tracker-settings-danger-heading {
@@ -261,14 +303,15 @@ body.theme-dark {
 
 .habit-tracker-walkthrough-btn {
 	font-size: 0.78em;
-	font-weight: 500;
+	font-weight: 600;
 	padding: 5px 10px;
 	cursor: pointer;
-	background-color: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 12%, var(--htx-card));
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 45%, transparent);
 	border-radius: var(--ht-radius-md);
-	color: var(--text-muted);
-	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease;
+	color: var(--htx-glow-violet-bright);
+	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-glow-violet) 20%, transparent);
+	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .habit-tracker-modal-walkthrough-btn {
@@ -284,8 +327,10 @@ body.theme-dark {
 }
 
 .habit-tracker-walkthrough-btn:hover {
-	color: var(--text-normal);
-	background-color: var(--background-modifier-hover);
+	color: #f9f5ff;
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 32%, var(--htx-card));
+	border-color: var(--htx-glow-violet-bright);
+	box-shadow: 0 0 16px color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 }
 
 .habit-tracker-view-toggle {
@@ -299,35 +344,40 @@ body.theme-dark {
 	   already wraps around it, this just makes the control itself safe to
 	   wrap internally too. */
 	flex-wrap: wrap;
-	background-color: var(--background-secondary);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 8%, var(--htx-card));
 	border-radius: var(--ht-radius-lg);
 	padding: 3px;
 	gap: 2px;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
+	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-glow-violet) 15%, transparent);
 }
 
 .habit-tracker-view-btn {
 	font-size: 0.78em;
-	font-weight: 500;
+	font-weight: 600;
 	padding: 4px 12px;
 	cursor: pointer;
 	background: transparent;
 	border: none;
 	border-radius: var(--ht-radius-md);
-	color: var(--text-muted);
+	color: var(--htx-glow-violet-bright);
+	opacity: 0.75;
 	box-shadow: none;
-	transition: background-color 0.12s ease, color 0.12s ease;
+	transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 
 .habit-tracker-view-btn:hover {
-	color: var(--text-normal);
-	background-color: var(--background-modifier-hover);
+	color: #f9f5ff;
+	opacity: 1;
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
 }
 
 .habit-tracker-view-btn-active,
 .habit-tracker-view-btn-active:hover {
-	background-color: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background: linear-gradient(135deg, var(--htx-glow-violet), var(--htx-violet-soft));
+	color: #f9f5ff;
+	opacity: 1;
+	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
 }
 
 .habit-tracker-view-nav {
@@ -341,10 +391,10 @@ body.theme-dark {
 	width: 26px;
 	height: 26px;
 	padding: 0;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid color-mix(in srgb, var(--htx-glow-violet) 40%, transparent);
 	border-radius: var(--ht-radius-md);
-	background-color: var(--background-secondary);
-	color: var(--text-muted);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-card));
+	color: var(--htx-glow-violet-bright);
 	cursor: pointer;
 	font-size: 0.75em;
 	display: flex;
@@ -354,15 +404,15 @@ body.theme-dark {
 }
 
 .habit-tracker-view-nav-btn:hover {
-	background-color: var(--background-modifier-hover);
-	border-color: var(--interactive-accent);
-	color: var(--text-normal);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 20%, var(--htx-card));
+	border-color: var(--htx-glow-violet-bright);
+	color: var(--htx-text);
 }
 
 .habit-tracker-view-nav-label {
 	font-size: 0.78em;
 	font-weight: 500;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	min-width: 8em;
 	text-align: center;
 }
@@ -371,10 +421,10 @@ body.theme-dark {
 	flex-shrink: 0;
 	height: 26px;
 	padding: 0 10px;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid var(--htx-card-border);
 	border-radius: var(--ht-radius-pill);
-	background-color: var(--background-secondary);
-	color: var(--interactive-accent);
+	background-color: var(--htx-card);
+	color: var(--htx-glow-violet-bright);
 	cursor: pointer;
 	font-size: 0.72em;
 	font-weight: 600;
@@ -382,8 +432,8 @@ body.theme-dark {
 }
 
 .habit-tracker-view-today-btn:hover {
-	background-color: var(--background-modifier-hover);
-	border-color: var(--interactive-accent);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 20%, var(--htx-card));
+	border-color: var(--htx-glow-violet-bright);
 }
 
 /* ---- Habit card ---- */
@@ -391,17 +441,22 @@ body.theme-dark {
 .habit-tracker-habit {
 	position: relative;
 	overflow: hidden;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid var(--htx-card-border);
 	border-radius: var(--ht-radius-xl);
 	padding: 20px 22px 22px;
-	background-color: var(--background-primary-alt, var(--background-secondary));
-	border-left: 4px solid var(--habit-color, var(--interactive-accent));
-	transition: box-shadow 0.15s ease, border-color 0.15s ease;
+	background:
+		radial-gradient(ellipse 320px 160px at 100% 0%, color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 20%, transparent), transparent 70%),
+		var(--htx-card);
+	border-left: 4px solid var(--habit-color, var(--htx-glow-violet));
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.45);
+	transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
 .habit-tracker-habit:hover {
-	box-shadow: var(--ht-shadow-sm);
-	border-color: var(--habit-color, var(--background-modifier-border));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 55%, transparent),
+		0 0 24px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 35%, transparent), 0 8px 24px rgba(0, 0, 0, 0.5);
+	border-color: color-mix(in srgb, var(--habit-color, var(--htx-glow-violet)) 60%, transparent);
+	transform: translateY(-1px);
 }
 
 .habit-tracker-header {
@@ -428,8 +483,10 @@ body.theme-dark {
 }
 
 .habit-tracker-name {
-	font-weight: 600;
-	font-size: 1.1em;
+	font-family: var(--htx-font-display);
+	font-weight: 700;
+	font-size: 1.15em;
+	color: var(--htx-text);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -486,19 +543,20 @@ body.theme-dark {
 	gap: 4px;
 	padding: 4px 10px;
 	border-radius: var(--ht-radius-pill);
-	background-color: var(--background-secondary);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 14%, var(--htx-bg-2));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
 	font-size: 0.74em;
 	transition: box-shadow 0.15s ease;
 }
 
-/* The streak is the number that actually matters day to day — give it more
-   visual weight than best/total/year (still all visible, per the current
-   design; just not competing equally for attention). */
+/* The streak is the number that actually matters day to day — a gold XP-style
+   badge, more visual weight than best/total/year, echoing the reference's
+   circular streak-count badge without needing a new DOM element. */
 .habit-tracker-pill-streak {
 	padding: 5px 13px;
 	font-size: 0.85em;
-	background-color: color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 18%, var(--background-secondary));
-	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 35%, transparent);
+	background: color-mix(in srgb, var(--htx-gold) 22%, var(--htx-bg-2));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--htx-gold) 55%, transparent), 0 0 12px color-mix(in srgb, var(--htx-gold) 35%, transparent);
 }
 
 .habit-tracker-pill-streak .habit-tracker-pill-icon {
@@ -506,8 +564,9 @@ body.theme-dark {
 }
 
 .habit-tracker-pill-streak .habit-tracker-pill-value {
+	font-family: var(--htx-font-display);
 	font-size: 1.1em;
-	color: #ffffff;
+	color: var(--htx-gold-bright);
 }
 
 /* Milestone echo — a brief glow on the streak pill, timed to match the
@@ -516,10 +575,10 @@ body.theme-dark {
 @keyframes habit-tracker-celebrate {
 	0%,
 	100% {
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 35%, transparent);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--htx-gold) 55%, transparent), 0 0 12px color-mix(in srgb, var(--htx-gold) 35%, transparent);
 	}
 	30% {
-		box-shadow: 0 0 0 4px color-mix(in srgb, var(--habit-color, var(--interactive-accent)) 45%, transparent);
+		box-shadow: 0 0 0 4px color-mix(in srgb, var(--htx-gold) 55%, transparent), 0 0 28px color-mix(in srgb, var(--htx-gold) 65%, transparent);
 	}
 }
 
@@ -532,12 +591,13 @@ body.theme-dark {
 }
 
 .habit-tracker-pill-value {
+	font-family: var(--htx-font-display);
 	font-weight: 700;
-	color: var(--text-normal);
+	color: var(--htx-text);
 }
 
 .habit-tracker-pill-label {
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 }
 
 .habit-tracker-type-badge {
@@ -546,7 +606,7 @@ body.theme-dark {
 	letter-spacing: 0.04em;
 	padding: 2px 6px;
 	border-radius: var(--ht-radius-sm);
-	color: var(--text-on-accent);
+	color: var(--htx-text);
 	margin-left: 2px;
 	/* Same title-row squeeze as .habit-tracker-name above should always land
 	   on the name (which truncates), never on this short fixed-text badge. */
@@ -554,15 +614,16 @@ body.theme-dark {
 }
 
 .habit-tracker-type-badge-break {
-	background-color: var(--background-modifier-error, var(--text-error));
+	background-color: color-mix(in srgb, var(--htx-red) 55%, var(--htx-bg-2));
+	box-shadow: 0 0 8px color-mix(in srgb, var(--htx-red) 40%, transparent);
 }
 
 .habit-tracker-type-badge-build {
-	background-color: var(--habit-color, var(--interactive-accent));
+	background-color: var(--habit-color, var(--htx-glow-violet));
 	/* The badge's background is the habit's own color, which can be a
 	   light custom pick — --text-on-accent alone isn't guaranteed to read
 	   against it, so fall back to the computed per-habit contrast color. */
-	color: var(--habit-color-contrast, var(--text-on-accent));
+	color: var(--habit-color-contrast, #0a0713);
 }
 
 .habit-tracker-milestone-bubble {
@@ -572,11 +633,11 @@ body.theme-dark {
 	padding: 4px 12px;
 	margin-bottom: 8px;
 	border-radius: var(--ht-radius-pill);
-	background-color: var(--background-secondary);
-	border: 1px dashed var(--background-modifier-border);
-	color: var(--text-muted);
+	background-color: color-mix(in srgb, var(--htx-gold) 10%, var(--htx-bg-2));
+	border: 1px dashed color-mix(in srgb, var(--htx-gold) 45%, transparent);
+	color: var(--htx-gold);
 	font-size: 0.78em;
-	font-weight: 500;
+	font-weight: 600;
 	/* An inline-flex block-level child of .habit-tracker-habit (which is
 	   overflow:hidden, not a flex container) sizes to its own content and
 	   won't shrink on its own — max-width:100% is a cheap guarantee it
@@ -589,28 +650,29 @@ body.theme-dark {
 .habit-tracker-milestone-bubble-achieved {
 	border-style: solid;
 	border-color: transparent;
-	background-color: var(--habit-color, var(--interactive-accent));
-	color: var(--habit-color-contrast, var(--text-on-accent));
+	background: linear-gradient(135deg, var(--htx-gold), var(--htx-gold-bright));
+	color: #2a1a00;
 	font-weight: 700;
+	box-shadow: 0 0 20px color-mix(in srgb, var(--htx-gold) 60%, transparent);
 	animation: habit-tracker-celebrate 1.4s ease-out;
 }
 
 .habit-tracker-identity {
 	font-size: 0.85em;
 	font-style: italic;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	margin-bottom: 6px;
 }
 
 .habit-tracker-meta-line {
 	font-size: 0.78em;
-	color: var(--text-faint);
+	color: var(--htx-text-faint);
 	margin-bottom: 4px;
 }
 
 .habit-tracker-goal-link {
 	cursor: pointer;
-	color: var(--text-accent);
+	color: var(--htx-glow-violet-bright);
 	width: fit-content;
 }
 
@@ -634,12 +696,12 @@ body.theme-dark {
 
 .habit-tracker-edit-btn:hover {
 	opacity: 1;
-	background-color: var(--background-secondary);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 25%, var(--htx-bg-2));
 }
 
 .habit-tracker-delete-btn:hover {
 	opacity: 1;
-	background-color: var(--background-modifier-error, var(--background-secondary));
+	background-color: color-mix(in srgb, var(--htx-red) 25%, var(--htx-bg-2));
 }
 
 /* ---- Year (heatmap) grid ---- */
@@ -659,7 +721,7 @@ body.theme-dark {
 	display: grid;
 	grid-template-columns: repeat(53, 1fr);
 	font-size: 0.68em;
-	color: var(--text-faint);
+	color: var(--htx-text-faint);
 	margin-bottom: 3px;
 	min-width: 1300px;
 }
@@ -680,30 +742,31 @@ body.theme-dark {
 	width: 100%;
 	aspect-ratio: 1 / 1;
 	border-radius: var(--ht-radius-sm);
-	background-color: color-mix(in srgb, var(--background-modifier-border) 65%, transparent);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-bg-2));
 	cursor: pointer;
-	transition: outline-color 0.08s ease, background-color 0.08s ease;
+	transition: outline-color 0.08s ease, background-color 0.08s ease, box-shadow 0.12s ease;
 }
 
 .habit-tracker-cell-daynum {
 	font-size: 0.72em;
 	line-height: 1;
-	color: var(--text-muted);
+	color: var(--htx-text-faint);
 	pointer-events: none;
 	user-select: none;
 }
 
 .habit-tracker-cell-done .habit-tracker-cell-daynum {
-	color: var(--habit-color-contrast, var(--text-on-accent));
+	color: var(--habit-color-contrast, #04140c);
 }
 
 .habit-tracker-cell:hover {
-	outline: 2px solid var(--text-muted);
+	outline: 2px solid var(--htx-glow-violet-bright);
 	filter: brightness(1.15);
 }
 
 .habit-tracker-cell-today {
-	outline: 2px solid var(--habit-color, var(--text-accent));
+	outline: 2px solid var(--htx-glow-violet-bright);
+	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-glow-violet-bright) 55%, transparent);
 }
 
 /* Streak-at-risk: today isn't checked in yet, it's evening, and yesterday
@@ -715,17 +778,17 @@ body.theme-dark {
 @keyframes habit-tracker-at-risk-pulse {
 	0%,
 	100% {
-		outline-color: var(--text-error, #ef4444);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-error, #ef4444) 55%, transparent);
+		outline-color: var(--htx-red);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--htx-red) 55%, transparent), 0 0 14px color-mix(in srgb, var(--htx-red) 50%, transparent);
 	}
 	50% {
-		outline-color: color-mix(in srgb, var(--text-error, #ef4444) 55%, transparent);
-		box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-error, #ef4444) 20%, transparent);
+		outline-color: color-mix(in srgb, var(--htx-red) 55%, transparent);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--htx-red) 20%, transparent);
 	}
 }
 
 .habit-tracker-cell-at-risk {
-	outline: 2px solid var(--text-error, #ef4444);
+	outline: 2px solid var(--htx-red);
 	animation: habit-tracker-at-risk-pulse 1.3s ease-in-out infinite;
 }
 
@@ -739,10 +802,10 @@ body.theme-dark {
 @keyframes habit-tracker-at-risk-border-pulse {
 	0%,
 	100% {
-		border-color: var(--text-error, #ef4444);
+		border-color: var(--htx-red);
 	}
 	50% {
-		border-color: color-mix(in srgb, var(--text-error, #ef4444) 40%, var(--background-modifier-border));
+		border-color: color-mix(in srgb, var(--htx-red) 40%, var(--htx-card-border));
 	}
 }
 
@@ -818,7 +881,7 @@ body.theme-dark {
 .habit-tracker-cell.habit-tracker-cell-future,
 .habit-tracker-yeardays-cell.habit-tracker-cell-future {
 	background-color: transparent;
-	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+	box-shadow: inset 0 0 0 1px var(--htx-card-border);
 	cursor: pointer;
 }
 
@@ -844,13 +907,13 @@ body.theme-dark {
 	width: 26px;
 	height: 26px;
 	border-radius: var(--ht-radius-sm);
-	background-color: color-mix(in srgb, var(--background-modifier-border) 65%, transparent);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-bg-2));
 	cursor: pointer;
 	transition: outline-color 0.08s ease, background-color 0.08s ease;
 }
 
 .habit-tracker-yeardays-cell:hover {
-	outline: 2px solid var(--text-muted);
+	outline: 2px solid var(--htx-glow-violet-bright);
 	filter: brightness(1.15);
 }
 
@@ -889,7 +952,7 @@ body.theme-dark {
    it sits in the file. */
 .habit-tracker-cell.habit-tracker-cell-missed,
 .habit-tracker-yeardays-cell.habit-tracker-cell-missed {
-	background-color: var(--background-modifier-border);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 4%, var(--htx-bg));
 }
 
 /* Minimum/2-minute-rule version of a day — same color as a full
@@ -898,7 +961,7 @@ body.theme-dark {
    opacity/color alone (also reads for colorblind users). */
 .habit-tracker-cell-min {
 	opacity: 0.55;
-	outline: 1px dashed var(--habit-color, var(--text-muted));
+	outline: 1px dashed var(--habit-color, var(--htx-text-muted));
 	outline-offset: -1px;
 }
 
@@ -920,20 +983,20 @@ body.theme-dark {
 	aspect-ratio: 1 / 1;
 	max-width: 76px;
 	border-radius: var(--ht-radius-lg);
-	background-color: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-bg-2));
+	border: 1px solid var(--htx-card-border);
 	cursor: pointer;
 	transition: transform 0.08s ease-in-out, background-color 0.1s ease;
 }
 
 .habit-tracker-week-cell:hover {
-	border-color: var(--habit-color, var(--text-accent));
-	box-shadow: 0 0 0 2px var(--habit-color, var(--text-accent));
+	border-color: var(--habit-color, var(--htx-glow-violet-bright));
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--habit-color, var(--htx-glow-violet-bright)) 60%, transparent);
 }
 
 .habit-tracker-week-day-label {
 	font-size: 0.75em;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
 }
@@ -1023,11 +1086,11 @@ body.theme-dark {
 	justify-content: center;
 	gap: 6px;
 	padding: 12px;
-	border: 1.5px dashed var(--background-modifier-border);
+	border: 1.5px dashed var(--htx-card-border);
 	border-radius: var(--ht-radius-xl);
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	cursor: pointer;
-	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease, transform 0.1s ease;
+	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease, transform 0.1s ease, box-shadow 0.12s ease;
 }
 
 .habit-tracker-add-card:active {
@@ -1035,9 +1098,10 @@ body.theme-dark {
 }
 
 .habit-tracker-add-card:hover {
-	border-color: var(--interactive-accent);
-	color: var(--interactive-accent);
-	background-color: var(--background-modifier-hover);
+	border-color: var(--htx-glow-violet-bright);
+	color: var(--htx-glow-violet-bright);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 12%, transparent);
+	box-shadow: 0 0 16px color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
 }
 
 .habit-tracker-add-icon {
@@ -1051,28 +1115,108 @@ body.theme-dark {
 	font-weight: 500;
 }
 
-/* ---- Add habit modal ---- */
+/* ---- Add habit modal ----
+   Every modal's contentEl gets this class (see HabitFormModal,
+   DailyCongratsModal, ConfirmDeleteModal in main.ts) — a duplicate token
+   block here (same values as .habit-tracker-root) since a modal's contentEl
+   is appended to <body>, not inside .habit-tracker-root, so it can't
+   inherit those custom properties by cascade alone. The `.modal:has(...)`
+   rule paints Obsidian's own modal chrome (the box contentEl sits inside)
+   so the whole window reads as one surface, not a dark box floating in a
+   light frame. Native Setting-API rows (inputs, dropdowns, toggles) are
+   deliberately left mostly at Obsidian's own defaults — just recolored to
+   fit — rather than restructured, per the "calmer, still on-palette" brief
+   for dense form surfaces. */
+.modal:has(.habit-tracker-modal) {
+	background: linear-gradient(180deg, #120a24, #0a0713);
+	border: 1px solid color-mix(in srgb, #a855f7 30%, transparent);
+	box-shadow: 0 0 40px rgba(168, 85, 247, 0.2);
+}
 
 .habit-tracker-modal {
 	position: relative;
+	--htx-bg: #0a0713;
+	--htx-bg-2: #120a24;
+	--htx-glow-violet: #a855f7;
+	--htx-glow-violet-bright: #c084fc;
+	--htx-violet-soft: #6d28d9;
+	--htx-green: #34d399;
+	--htx-green-bright: #4ade80;
+	--htx-gold: #fbbf24;
+	--htx-gold-bright: #fde68a;
+	--htx-red: #f87171;
+	--htx-card: #1a1030;
+	--htx-card-border: color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
+	--htx-text: #f3ecff;
+	--htx-text-muted: #b7a9d9;
+	--htx-text-faint: #8574ad;
+	color: var(--htx-text);
 }
 
 .habit-tracker-modal h3 {
+	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
 	margin-top: 0;
 	margin-bottom: var(--ht-space-3);
 	font-size: 1.25em;
+	color: var(--htx-text);
 }
 
 .habit-tracker-modal h4 {
 	margin-top: 22px;
 	margin-bottom: var(--ht-space-2);
 	padding-top: var(--ht-space-3);
-	border-top: 1px solid var(--background-modifier-border);
-	color: var(--text-muted);
+	border-top: 1px solid var(--htx-card-border);
+	color: var(--htx-glow-violet-bright);
 	font-size: 0.8em;
 	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
+}
+
+.habit-tracker-modal p,
+.habit-tracker-modal label {
+	color: var(--htx-text-muted);
+}
+
+.habit-tracker-modal input,
+.habit-tracker-modal textarea,
+.habit-tracker-modal select {
+	background-color: var(--htx-bg-2) !important;
+	border-color: var(--htx-card-border) !important;
+	color: var(--htx-text) !important;
+}
+
+.habit-tracker-modal input:focus,
+.habit-tracker-modal textarea:focus,
+.habit-tracker-modal select:focus {
+	border-color: var(--htx-glow-violet-bright) !important;
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--htx-glow-violet) 35%, transparent) !important;
+}
+
+.habit-tracker-modal .setting-item-name {
+	color: var(--htx-text);
+}
+
+.habit-tracker-modal .setting-item-description {
+	color: var(--htx-text-faint);
+}
+
+.habit-tracker-modal .setting-item {
+	border-top-color: var(--htx-card-border);
+}
+
+.habit-tracker-modal .checkbox-container.is-enabled {
+	background-color: var(--htx-glow-violet);
+}
+
+.habit-tracker-modal button {
+	background-color: var(--htx-card);
+	color: var(--htx-text);
+	border: 1px solid var(--htx-card-border);
+}
+
+.habit-tracker-modal button:hover {
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 18%, var(--htx-card));
 }
 
 /* The lever fields' example/typed text can be longer than a single-line
@@ -1112,8 +1256,8 @@ body.theme-dark {
 	height: 16px;
 	margin-left: 6px;
 	border-radius: 50%;
-	background-color: var(--background-modifier-border);
-	color: var(--text-muted);
+	background-color: var(--htx-card);
+	color: var(--htx-text-muted);
 	font-size: 0.68em;
 	font-weight: 700;
 	cursor: pointer;
@@ -1122,8 +1266,8 @@ body.theme-dark {
 }
 
 .habit-tracker-help-btn:hover {
-	background-color: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background-color: var(--htx-glow-violet);
+	color: #f9f5ff;
 }
 
 .habit-tracker-help-box {
@@ -1131,10 +1275,10 @@ body.theme-dark {
 	margin: -4px 0 12px;
 	padding: 8px 12px;
 	border-radius: var(--ht-radius-md);
-	border-left: 2px solid var(--interactive-accent);
-	background-color: var(--background-secondary);
+	border-left: 2px solid var(--htx-glow-violet);
+	background-color: var(--htx-card);
 	font-size: 0.8em;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 }
 
 .habit-tracker-help-box-visible {
@@ -1142,7 +1286,7 @@ body.theme-dark {
 }
 
 .habit-tracker-help-box strong {
-	color: var(--text-normal);
+	color: var(--htx-text);
 }
 
 .habit-tracker-help-box p {
@@ -1155,7 +1299,7 @@ body.theme-dark {
 
 .habit-tracker-fourlaws-toggle {
 	font-size: 0.8em;
-	color: var(--text-accent);
+	color: var(--htx-glow-violet-bright);
 	cursor: pointer;
 	margin-bottom: 10px;
 	width: fit-content;
@@ -1170,7 +1314,8 @@ body.theme-dark {
 	margin-bottom: 14px;
 	padding: 10px 12px;
 	border-radius: var(--ht-radius-lg);
-	background-color: var(--background-secondary);
+	background-color: var(--htx-card);
+	border: 1px solid var(--htx-card-border);
 }
 
 .habit-tracker-fourlaws-box-visible {
@@ -1183,7 +1328,7 @@ body.theme-dark {
 }
 
 .habit-tracker-fourlaws-row:not(:last-child) {
-	border-bottom: 1px solid var(--background-modifier-border);
+	border-bottom: 1px solid var(--htx-card-border);
 }
 
 .habit-tracker-fourlaws-heading {
@@ -1195,16 +1340,16 @@ body.theme-dark {
 
 .habit-tracker-fourlaws-law {
 	font-weight: 700;
-	color: var(--text-normal);
+	color: var(--htx-text);
 }
 
 .habit-tracker-fourlaws-stage {
-	color: var(--text-faint);
+	color: var(--htx-text-faint);
 	font-style: italic;
 }
 
 .habit-tracker-fourlaws-fields {
-	color: var(--interactive-accent);
+	color: var(--htx-glow-violet-bright);
 	font-weight: 600;
 }
 
@@ -1223,13 +1368,13 @@ body.theme-dark {
 .habit-tracker-review-card {
 	padding: 10px 12px;
 	border-radius: var(--ht-radius-lg);
-	background-color: var(--background-secondary);
-	border-left: 3px solid var(--interactive-accent);
+	background-color: var(--htx-card);
+	border-left: 3px solid var(--htx-glow-violet);
 }
 
 .habit-tracker-review-critique {
 	margin: 4px 0;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	font-size: 0.9em;
 }
 
@@ -1251,7 +1396,7 @@ body.theme-dark {
 
 .habit-tracker-fourlaws-row p {
 	margin: 4px 0 0;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 }
 
 /* Split-into-two-occurrences toggle/panel — same hidden-until-clicked
@@ -1259,7 +1404,7 @@ body.theme-dark {
    since it's a distinct feature, not a variant of that one. */
 .habit-tracker-split-toggle {
 	font-size: 0.8em;
-	color: var(--text-accent);
+	color: var(--htx-glow-violet-bright);
 	cursor: pointer;
 	margin-bottom: 10px;
 	width: fit-content;
@@ -1274,7 +1419,8 @@ body.theme-dark {
 	margin-bottom: 14px;
 	padding: 10px 12px;
 	border-radius: var(--ht-radius-lg);
-	background-color: var(--background-secondary);
+	background-color: var(--htx-card);
+	border: 1px solid var(--htx-card-border);
 }
 
 .habit-tracker-split-panel-visible {
@@ -1306,7 +1452,8 @@ body.theme-dark {
 }
 
 .habit-tracker-swatch-selected {
-	outline-color: var(--text-normal);
+	outline-color: var(--htx-glow-violet-bright);
+	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
 }
 
 /* Small "x" pinned to a custom swatch's corner, deleting just that saved
@@ -1318,8 +1465,8 @@ body.theme-dark {
 	width: 14px;
 	height: 14px;
 	border-radius: 50%;
-	background: var(--background-modifier-error);
-	color: var(--text-on-accent);
+	background: var(--htx-red);
+	color: #2a0a0a;
 	font-size: 10px;
 	line-height: 14px;
 	text-align: center;
@@ -1333,7 +1480,7 @@ body.theme-dark {
 	padding: 0;
 	border: none;
 	border-radius: 50%;
-	background: var(--background-secondary);
+	background: var(--htx-card);
 	cursor: pointer;
 	font-size: 13px;
 	display: flex;
@@ -1342,7 +1489,7 @@ body.theme-dark {
 }
 
 .habit-tracker-save-color-btn:hover {
-	background: var(--background-modifier-hover);
+	background: color-mix(in srgb, var(--htx-glow-violet) 25%, var(--htx-card));
 }
 
 .habit-tracker-color-wheel {
@@ -1350,7 +1497,7 @@ body.theme-dark {
 	width: 26px;
 	height: 26px;
 	padding: 0;
-	border: 2px dashed var(--background-modifier-border);
+	border: 2px dashed var(--htx-card-border);
 	border-radius: 50%;
 	cursor: pointer;
 	background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
@@ -1380,15 +1527,15 @@ body.theme-dark {
 	margin-top: var(--ht-space-4);
 	padding: var(--ht-space-2) var(--ht-space-3);
 	border-radius: var(--ht-radius-lg);
-	background-color: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
+	background-color: var(--htx-card);
+	border: 1px solid var(--htx-card-border);
 	cursor: pointer;
 	font-weight: 600;
 	transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
 .habit-tracker-commit-row:hover {
-	border-color: var(--interactive-accent);
+	border-color: var(--htx-glow-violet-bright);
 }
 
 .habit-tracker-commit-checkbox {
@@ -1396,7 +1543,7 @@ body.theme-dark {
 	height: 18px;
 	cursor: pointer;
 	flex-shrink: 0;
-	accent-color: var(--interactive-accent);
+	accent-color: var(--htx-glow-violet);
 }
 
 .habit-tracker-modal-footer {
@@ -1404,7 +1551,7 @@ body.theme-dark {
 	justify-content: flex-end;
 	margin-top: var(--ht-space-4);
 	padding-top: var(--ht-space-3);
-	border-top: 1px solid var(--background-modifier-border);
+	border-top: 1px solid var(--htx-card-border);
 }
 
 /* Consistent, visible focus rings for keyboard navigation throughout the
@@ -1412,7 +1559,7 @@ body.theme-dark {
    a focus style from Obsidian's own theme by default. */
 .habit-tracker-modal button:focus-visible,
 .habit-tracker-color-wheel:focus-visible {
-	outline: 2px solid var(--interactive-accent);
+	outline: 2px solid var(--htx-glow-violet-bright);
 	outline-offset: 2px;
 }
 
@@ -1664,10 +1811,10 @@ body.is-mobile .habit-tracker-actions {
 .habit-tracker-walkthrough-highlight {
 	position: relative;
 	z-index: 1;
-	outline: 2px solid var(--interactive-accent);
+	outline: 2px solid var(--htx-glow-violet-bright);
 	outline-offset: 4px;
 	border-radius: var(--ht-radius-md);
-	background-color: var(--background-modifier-hover);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 15%, transparent);
 }
 
 .habit-tracker-walkthrough-tooltip {
@@ -1676,9 +1823,9 @@ body.is-mobile .habit-tracker-actions {
 	width: min(320px, calc(100% - 24px));
 	padding: 12px 14px;
 	border-radius: var(--ht-radius-lg);
-	background-color: var(--background-primary);
-	border: 1px solid var(--interactive-accent);
-	box-shadow: var(--ht-shadow-md);
+	background-color: var(--htx-card);
+	border: 1px solid var(--htx-glow-violet);
+	box-shadow: 0 0 20px color-mix(in srgb, var(--htx-glow-violet) 35%, transparent), var(--ht-shadow-md);
 	animation: habit-tracker-tooltip-in 0.18s ease-out;
 }
 
@@ -1706,7 +1853,7 @@ body.is-mobile .habit-tracker-actions {
 .habit-tracker-walkthrough-progress {
 	font-size: 0.75em;
 	font-weight: 600;
-	color: var(--interactive-accent);
+	color: var(--htx-glow-violet-bright);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	margin-bottom: 4px;
@@ -1716,12 +1863,13 @@ body.is-mobile .habit-tracker-actions {
 	display: block;
 	font-size: 0.95em;
 	margin-bottom: 4px;
+	color: var(--htx-text);
 }
 
 .habit-tracker-walkthrough-body {
 	margin: 0 0 10px;
 	font-size: 0.85em;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	line-height: 1.4;
 }
 
@@ -1736,12 +1884,12 @@ body.is-mobile .habit-tracker-actions {
 	margin-right: auto;
 	background: transparent;
 	box-shadow: none;
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	font-size: 0.8em;
 }
 
 .habit-tracker-walkthrough-skip:hover {
-	color: var(--text-normal);
+	color: var(--htx-text);
 }
 
 /* The block-level "click + Add habit" intro reuses the modal tooltip's
@@ -1758,22 +1906,39 @@ body.is-mobile .habit-tracker-actions {
 
 .habit-tracker-walkthrough-congrats {
 	text-align: center;
-	padding: 12px 4px 4px;
+	padding: 20px 4px 4px;
 }
 
 .habit-tracker-walkthrough-congrats h3 {
 	margin-top: 0;
-	font-size: 1.3em;
+	font-size: 1.5em;
+	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+	background: linear-gradient(135deg, var(--htx-gold-bright), var(--htx-gold), var(--htx-glow-violet-bright));
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	text-shadow: 0 0 30px color-mix(in srgb, var(--htx-gold) 40%, transparent);
 }
 
 .habit-tracker-walkthrough-congrats p {
-	color: var(--text-muted);
+	color: var(--htx-text-muted);
 	line-height: 1.5;
 	margin: 0 0 14px;
 }
 
 .habit-tracker-walkthrough-congrats button {
 	margin-top: 6px;
+}
+
+.habit-tracker-modal .mod-cta {
+	background: linear-gradient(135deg, var(--htx-glow-violet), var(--htx-violet-soft));
+	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-glow-violet) 45%, transparent);
+	color: #f9f5ff;
+}
+
+.habit-tracker-modal .mod-warning {
+	background: color-mix(in srgb, var(--htx-red) 65%, var(--htx-bg-2));
+	color: #2a0a0a;
 }
 
 @media (hover: none) {
@@ -1908,30 +2073,31 @@ body.is-mobile .habit-tracker-actions {
 	flex-shrink: 0;
 	height: 30px;
 	padding: 0 10px;
-	border: 1px solid var(--background-modifier-border);
+	border: 1px solid var(--htx-card-border);
 	border-radius: var(--ht-radius-md);
-	background-color: var(--background-secondary);
-	color: var(--text-muted);
+	background-color: var(--htx-card);
+	color: var(--htx-text-muted);
 	cursor: pointer;
 	font-size: 0.78em;
 	font-weight: 500;
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+	transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .habit-tracker-reorder-btn:hover {
-	background-color: var(--background-modifier-hover);
-	border-color: var(--interactive-accent);
-	color: var(--text-normal);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 20%, var(--htx-card));
+	border-color: var(--htx-glow-violet-bright);
+	color: var(--htx-text);
 }
 
 .habit-tracker-reorder-btn-active,
 .habit-tracker-reorder-btn-active:hover {
-	background-color: var(--interactive-accent);
-	border-color: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background: linear-gradient(135deg, var(--htx-glow-violet), var(--htx-violet-soft));
+	border-color: var(--htx-glow-violet-bright);
+	color: #f9f5ff;
+	box-shadow: 0 0 14px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
 }
 
 /* Card affordance while reorder mode is on: draggable, dashed outline
@@ -1989,4 +2155,31 @@ body.is-mobile .habit-tracker-actions {
 	opacity: 0.35;
 	cursor: not-allowed;
 	pointer-events: none;
+}
+
+/* ---- Native Obsidian Settings tab: calm, light accent pass ----
+   Deliberately not a full reskin — this shares Obsidian's own Settings
+   window chrome with every other plugin's tab, so a heavy neon treatment
+   here would feel broken next to it. Just enough violet/gold accent to
+   feel like the same product as the card/modal surfaces. */
+.habit-tracker-settings-tab h2 {
+	color: var(--htx-glow-violet, #a855f7);
+	font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+}
+
+.habit-tracker-settings-tab .setting-item-heading .setting-item-name {
+	color: var(--htx-glow-violet, #a855f7);
+}
+
+.habit-tracker-settings-tab input[type="checkbox"]:checked {
+	accent-color: var(--htx-glow-violet, #a855f7);
+}
+
+.habit-tracker-settings-tab .checkbox-container.is-enabled {
+	background-color: var(--htx-glow-violet, #a855f7);
+}
+
+.habit-tracker-settings-tab button.mod-cta {
+	background: linear-gradient(135deg, #a855f7, #6d28d9);
+	color: #f9f5ff;
 }

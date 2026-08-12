@@ -1752,6 +1752,7 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 	display() {
 		const { containerEl } = this;
 		containerEl.empty();
+		containerEl.addClass("habit-tracker-settings-tab");
 		containerEl.createEl("h2", { text: "Habit Tracker — Sync" });
 		containerEl.createEl("p", {
 			text: "Connect a free Supabase project to sync habits across devices in real time. Leave blank to use this device only (local storage, synced only however your vault itself syncs).",
