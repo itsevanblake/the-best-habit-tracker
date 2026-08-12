@@ -492,9 +492,9 @@ const EXAMPLE_LEVERS: HabitLevers = {
 // generic explanations.
 const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: string }> = {
 	stackedAfter: {
-		term: "Trigger — Law 1, Make It Obvious",
+		term: "Cue — Law 1, Make It Obvious",
 		definition:
-			'The cue. Often a habit stack anchored to something you already do reliably: "After [current habit], I will [new habit]." The trigger habit needs to be automatic — waking up, brushing teeth, sitting down with coffee.',
+			'The cue. Often a habit stack anchored to something you already do reliably: "After [current habit], I will [new habit]." The cue habit needs to be automatic — waking up, brushing teeth, sitting down with coffee.',
 	},
 	craving: {
 		term: "Craving — Law 2, Make It Attractive",
@@ -524,7 +524,7 @@ const LEVER_TERM_INFO: Record<keyof HabitLevers, { term: string; definition: str
 };
 
 const LEVER_LABELS: Record<keyof HabitLevers, string> = {
-	stackedAfter: "Trigger",
+	stackedAfter: "Cue",
 	craving: "Craving",
 	minimumVersion: "Routine",
 	reward: "Reward",
@@ -557,8 +557,8 @@ const FOUR_LAWS: { law: string; stage: string; fields: string; text: string }[] 
 	{
 		law: "Law 1 — Make It Obvious",
 		stage: "cue",
-		fields: "Trigger",
-		text: "Surface the cue. The environment is already set up so the trigger is impossible to miss.",
+		fields: "Cue",
+		text: "Surface the cue. The environment is already set up so the cue is impossible to miss.",
 	},
 	{
 		law: "Law 2 — Make It Attractive",
@@ -594,10 +594,10 @@ interface FormulaReviewResult {
 
 type FormulaReview = Partial<Record<FormulaFieldKey, FormulaReviewResult>>;
 
-const FORMULA_REVIEW_SYSTEM_PROMPT = `You are a habit-design coach grounded in James Clear's Atomic Habits, specifically the Four Laws of Behavior Change. The user is filling in "The Complete Habit Formula" for a habit: "After I [Trigger], I will [Routine]. [Craving]. Once done, [Reward]."
+const FORMULA_REVIEW_SYSTEM_PROMPT = `You are a habit-design coach grounded in James Clear's Atomic Habits, specifically the Four Laws of Behavior Change. The user is filling in "The Complete Habit Formula" for a habit: "After I [Cue], I will [Routine]. [Craving]. Once done, [Reward]."
 
 For each of the four fields they've written, judge it against its Law:
-- Trigger (Law 1, Make It Obvious): is the cue a specific, already-automatic moment — not vague like "in the morning"?
+- Cue (Law 1, Make It Obvious): is the cue a specific, already-automatic moment — not vague like "in the morning"?
 - Craving (Law 2, Make It Attractive): is there a real temptation-bundling pull, something they already want, tied to the habit?
 - Routine (Law 3, Make It Easy): is it scaled down to under two minutes — the smallest possible version, not the aspirational full version?
 - Reward (Law 4, Make It Satisfying): is the payoff immediate and tied to completion — not a delayed, someday-in-the-future outcome?
@@ -1034,7 +1034,7 @@ class HabitFormModal extends Modal {
 		formulaWrap.createEl("h4", { text: "The Complete Habit Formula" });
 		formulaWrap.createEl("p", {
 			cls: "setting-item-description",
-			text: 'Clear\'s own structure, one field per Law: "After I [Trigger], I will [Routine]. [Craving]. Once done, [Reward]."',
+			text: 'Clear\'s own structure, one field per Law: "After I [Cue], I will [Routine]. [Craving]. Once done, [Reward]."',
 		});
 
 		// Toggleable panel mapping each field to its specific Law.
@@ -1194,13 +1194,13 @@ class HabitFormModal extends Modal {
 			const splitPanel = splitWrap.createDiv({ cls: "habit-tracker-split-panel" });
 			splitPanel.createEl("p", {
 				cls: "setting-item-description",
-				text: "Creates a fully independent copy of this habit with its own streak — useful when the same habit happens at two different times of day with different triggers (e.g. a morning and an evening meditation).",
+				text: "Creates a fully independent copy of this habit with its own streak — useful when the same habit happens at two different times of day with different cues (e.g. a morning and an evening meditation).",
 			});
 
 			let splitTriggerEl: HTMLTextAreaElement;
 			new Setting(splitPanel)
-				.setName("New Trigger for the copy")
-				.setDesc('Required — the copy starts with a blank Trigger since "After I ___" is usually different for the second occurrence.')
+				.setName("New Cue for the copy")
+				.setDesc('Required — the copy starts with a blank Cue since "After I ___" is usually different for the second occurrence.')
 				.addTextArea((text) => {
 					splitTriggerEl = text.inputEl;
 					autoGrow(text.inputEl);
@@ -1241,7 +1241,7 @@ class HabitFormModal extends Modal {
 				if (this.isNew && !this.validateRequiredFields()) return;
 				const copyTrigger = splitTriggerEl.value.trim();
 				if (!copyTrigger) {
-					new Notice('Fill out "New Trigger for the copy" first.');
+					new Notice('Fill out "New Cue for the copy" first.');
 					return;
 				}
 				if (splitTimeOfDayOriginal === splitTimeOfDayCopy) {
@@ -1647,8 +1647,8 @@ class HabitFormModal extends Modal {
 		contentEl.createEl("h3", { text: isTask ? "🎉 You just built full accountability into a task!" : "🎉 You just built your first habit!" });
 		contentEl.createEl("p", {
 			text: isTask
-				? `"${habitName}" is scheduled for ${this.values.scheduledDate}, and you've filled in the whole loop for it — the trigger, the craving, the routine, and the reward.`
-				: `"${habitName}" is live, and you've filled in the whole loop for it — the trigger, the craving, the routine, and the reward.`,
+				? `"${habitName}" is scheduled for ${this.values.scheduledDate}, and you've filled in the whole loop for it — the cue, the craving, the routine, and the reward.`
+				: `"${habitName}" is live, and you've filled in the whole loop for it — the cue, the craving, the routine, and the reward.`,
 		});
 		contentEl.createEl("p", {
 			text: isTask
@@ -1761,7 +1761,7 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "AI Assistance" });
 		containerEl.createEl("p", {
-			text: 'Powers the "✨ Review Formula" button in the Add/Edit Habit form, which critiques and suggests rewrites for your Complete Habit Formula fields (Trigger/Craving/Routine/Reward). Uses the Anthropic API — your key is stored locally on this device only, never synced.',
+			text: 'Powers the "✨ Review Formula" button in the Add/Edit Habit form, which critiques and suggests rewrites for your Complete Habit Formula fields (Cue/Craving/Routine/Reward). Uses the Anthropic API — your key is stored locally on this device only, never synced.',
 			cls: "setting-item-description",
 		});
 
@@ -2563,7 +2563,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			row.createDiv({ text: `→ ${task.identity}`, cls: "habit-tracker-identity" });
 		}
 		if (task.stackedAfter) {
-			row.createDiv({ text: `⛓ Trigger: ${task.stackedAfter}`, cls: "habit-tracker-meta-line" });
+			row.createDiv({ text: `⛓ Cue: ${task.stackedAfter}`, cls: "habit-tracker-meta-line" });
 		}
 		if (task.craving) {
 			row.createDiv({ text: `🍯 Craving: ${task.craving}`, cls: "habit-tracker-meta-line" });
@@ -2755,7 +2755,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			card.createDiv({ text: `→ ${habit.identity}`, cls: "habit-tracker-identity" });
 		}
 		const triggerBits: string[] = [];
-		if (habit.stackedAfter) triggerBits.push(`⛓ Trigger: ${habit.stackedAfter}`);
+		if (habit.stackedAfter) triggerBits.push(`⛓ Cue: ${habit.stackedAfter}`);
 		if (triggerBits.length) {
 			card.createDiv({ text: triggerBits.join("   ·   "), cls: "habit-tracker-meta-line" });
 		}
