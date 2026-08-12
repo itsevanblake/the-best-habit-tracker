@@ -1666,6 +1666,45 @@ class HabitFormModal extends Modal {
 	}
 }
 
+// Fired once per day (habits) or once per scheduled date (tasks) — see
+// HabitTrackerPlugin.maybeCelebrateAllHabitsDoneToday/
+// maybeCelebrateAllTasksDoneForDate — the moment every item tracked for
+// that day is checked off, not just an individual streak/task.
+class DailyCongratsModal extends Modal {
+	kind: "habits" | "tasks";
+	count: number;
+	date?: string;
+
+	constructor(app: App, kind: "habits" | "tasks", count: number, date?: string) {
+		super(app);
+		this.kind = kind;
+		this.count = count;
+		this.date = date;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.addClass("habit-tracker-modal");
+		contentEl.addClass("habit-tracker-walkthrough-congrats");
+		const isTasks = this.kind === "tasks";
+		const plural = this.count === 1 ? "" : "s";
+		contentEl.createEl("h3", { text: isTasks ? "🎉 Every task checked off!" : "🎉 Every habit, checked off!" });
+		contentEl.createEl("p", {
+			text: isTasks
+				? `All ${this.count} task${plural} tracked for ${this.date} are done — full accountability, nothing left on the table.`
+				: `You showed up for all ${this.count} habit${plural} today — that's today's vote cast for who you're becoming.`,
+		});
+		const doneBtn = contentEl.createEl("button", { text: "Nice", cls: "mod-cta" });
+		doneBtn.type = "button";
+		doneBtn.onclick = () => this.close();
+		window.setTimeout(() => doneBtn.focus(), 0);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
 class ConfirmDeleteModal extends Modal {
 	habitName: string;
 	onConfirm: () => void;
@@ -2513,6 +2552,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			}
 			await this.plugin.persist();
 			this.plugin.refreshAll();
+			if (checkbox.checked) this.plugin.maybeCelebrateAllTasksDoneForDate(date);
 		};
 
 		const dot = header.createSpan({ cls: "habit-tracker-dot" });
@@ -3083,6 +3123,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			window.setTimeout(() => {
 				this.plugin.refreshAll();
 				this.plugin.maybeCelebrate(habit, oldStreak, newStreak);
+				if (dateStr === todayStr()) this.plugin.maybeCelebrateAllHabitsDoneToday();
 			}, 160);
 		};
 	}
@@ -3176,6 +3217,14 @@ export default class HabitTrackerPlugin extends Plugin {
 	private lastCallAlarmLastFiredAt: Map<string, number> = new Map();
 	private lastCallDismissedToday: Map<string, string> = new Map(); // alarmId -> "YYYY-MM-DD" it was dismissed on
 	private lastAlarmTickDate: string | null = null;
+	// In-memory only, same reasoning as the alarm maps above — a stray
+	// repeat popup after an app restart is harmless, so this doesn't need
+	// to survive one or sync across devices. Habits only ever congratulate
+	// for "today" (the grid can't check off a future/past day into "all
+	// done"), so a single date is enough; tasks can complete a batch for
+	// any scheduled date (including an overdue one), so that needs a set.
+	private lastAllHabitsCongratsDate: string | null = null;
+	private allTasksCongratsShownDates: Set<string> = new Set();
 
 	async onload() {
 		const saved = await this.loadData();
@@ -3531,5 +3580,36 @@ export default class HabitTrackerPlugin extends Plugin {
 				break;
 			}
 		}
+	}
+
+	// A bigger, once-a-day moment distinct from the per-habit milestone
+	// toast above — every habit checked off, not just one streak crossing
+	// a threshold. Only ever evaluated for today (the grid has no notion
+	// of "all done" for a past day), and guarded so it can't refire twice
+	// the same day even if the user unchecks/rechecks a habit afterward.
+	maybeCelebrateAllHabitsDoneToday() {
+		const today = todayStr();
+		if (this.lastAllHabitsCongratsDate === today) return;
+		const habits = this.data.habits.filter((h) => h.kind !== "task");
+		if (habits.length === 0) return;
+		const allDone = habits.every((h) => !!this.data.entries[h.id]?.[today]);
+		if (!allDone) return;
+		this.lastAllHabitsCongratsDate = today;
+		new DailyCongratsModal(this.app, "habits", habits.length).open();
+	}
+
+	// Same idea for tasks, but keyed per scheduled date rather than just
+	// "today" — an overdue task still tracks against the day it was
+	// originally scheduled for (see renderTask's `date` calculation), so
+	// clearing out a batch of overdue tasks from the same day is its own
+	// congrats moment, independent of today's.
+	maybeCelebrateAllTasksDoneForDate(date: string) {
+		if (this.allTasksCongratsShownDates.has(date)) return;
+		const tasksForDate = this.data.habits.filter((h) => h.kind === "task" && (h.scheduledDate ?? todayStr()) === date);
+		if (tasksForDate.length === 0) return;
+		const allDone = tasksForDate.every((t) => !!this.data.entries[t.id]?.[date]);
+		if (!allDone) return;
+		this.allTasksCongratsShownDates.add(date);
+		new DailyCongratsModal(this.app, "tasks", tasksForDate.length, date).open();
 	}
 }
