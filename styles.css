@@ -1416,8 +1416,12 @@ body.theme-dark {
    border-top, and Split's wrapper doesn't open with a bare .setting-item
    at all. */
 .habit-tracker-modal .habit-tracker-form-field-wrap > .setting-item:first-child {
-	border-top: 1px solid var(--htx-card-border);
-	padding-top: var(--size-4-4, 18px);
+	/* !important: plain specificity wasn't enough to beat whatever rule of
+	   Obsidian's own core CSS is actually stripping this border — verified
+	   in practice (still missing after a higher-specificity, non-important
+	   attempt), not a guess. */
+	border-top: 1px solid var(--htx-card-border) !important;
+	padding-top: var(--size-4-4, 18px) !important;
 }
 
 .habit-tracker-modal .checkbox-container.is-enabled {
