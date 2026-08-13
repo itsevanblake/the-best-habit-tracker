@@ -498,9 +498,23 @@ body.theme-dark {
 	font-size: 0.78em;
 	font-weight: 500;
 	color: var(--htx-text-muted);
-	min-width: 8em;
 	text-align: center;
+	white-space: nowrap;
 }
+
+/* Fixed, not min — a floor still lets a longer string (a wider month name,
+   a week range that crosses a year boundary, "Yesterday" vs "Today") grow
+   the box and push the ▶ arrow sideways as you page through. Widths below
+   are the real rendered width (headless Chrome, this stylesheet's own
+   font) of each view's longest string the code actually produces, plus a
+   ~12px buffer — not a guessed character count:
+     month  "September 2026"              → 111px measured
+     week   "Dec 28, 2025 – Jan 3, 2026"   → 183px measured
+     day    "Yesterday · Wednesday, Sep 3" → 196px measured (the long pole —
+            longest weekday + "Yesterday ·" prefix + a wide month/day/year) */
+.habit-tracker-view-nav-label-month { width: 124px; }
+.habit-tracker-view-nav-label-week { width: 196px; }
+.habit-tracker-view-nav-label-day { width: 210px; }
 
 .habit-tracker-view-today-btn {
 	flex-shrink: 0;
@@ -831,6 +845,8 @@ body.theme-dark {
 }
 
 .habit-tracker-edit-btn,
+.habit-tracker-archive-btn,
+.habit-tracker-restore-btn,
 .habit-tracker-delete-btn {
 	display: flex;
 	align-items: center;
@@ -847,6 +863,16 @@ body.theme-dark {
 .habit-tracker-edit-btn:hover {
 	opacity: 1;
 	background-color: color-mix(in srgb, var(--htx-glow-violet) 25%, var(--htx-bg-2));
+}
+
+.habit-tracker-archive-btn:hover {
+	opacity: 1;
+	background-color: color-mix(in srgb, var(--htx-gold) 25%, var(--htx-bg-2));
+}
+
+.habit-tracker-restore-btn:hover {
+	opacity: 1;
+	background-color: color-mix(in srgb, var(--htx-green) 25%, var(--htx-bg-2));
 }
 
 .habit-tracker-delete-btn:hover {
@@ -1376,6 +1402,24 @@ body.theme-dark {
 	border-top-color: var(--htx-card-border);
 }
 
+/* Time of Day, Days, Tracking since, and Type each live in their own wrapper
+   div (so HabitFormModal can show/hide the whole field at once when Kind
+   flips between habit/task, via habit-tracker-kind-hidden) — which makes
+   each field's Setting Obsidian's literal first-child, and Obsidian strips
+   the separator border specifically from a first-child .setting-item. That
+   silently dropped the line between every one of these fields and whatever
+   came before it. Forcing it back on, same --htx-card-border every other
+   separator in this modal already uses (violet-tinted, not a plain grey) —
+   not a new line style, just restoring the one that should already be
+   there. Doesn't apply to every field-wrap: one that opens with its own h4
+   (Check-in Alarm) already gets separation from the heading's own
+   border-top, and Split's wrapper doesn't open with a bare .setting-item
+   at all. */
+.habit-tracker-modal .habit-tracker-form-field-wrap > .setting-item:first-child {
+	border-top: 1px solid var(--htx-card-border);
+	padding-top: var(--size-4-4, 18px);
+}
+
 .habit-tracker-modal .checkbox-container.is-enabled {
 	background-color: var(--htx-glow-violet);
 }
@@ -1775,6 +1819,8 @@ body.is-mobile .habit-tracker-settings-lastcall-list .setting-item-control {
    brings tap targets up to Apple/Google's ~44px minimum recommendation. */
 @media (hover: none) {
 	.habit-tracker-edit-btn,
+	.habit-tracker-archive-btn,
+	.habit-tracker-restore-btn,
 	.habit-tracker-delete-btn {
 		opacity: 0.8;
 		width: 40px;
@@ -1962,25 +2008,28 @@ body.is-mobile .habit-tracker-actions {
 
 /* ---- Habit creation walkthrough ---- */
 
-/* Interaction gate: while the walkthrough runs, only the highlighted field
-   accepts clicks. This is `pointer-events` ONLY — deliberately no opacity or
-   filter here.
+/* No interaction gate. Every field stays clickable for the whole tour.
 
-   The previous version dimmed with `opacity: 0.25` on every direct child and
-   restored `opacity: 1` on the highlight. That silently failed for 8 of the
-   13 steps: Identity/Goal live in identityWrap, Build-Break in typeWrap,
-   Commit in commitWrap, and the four Four-Laws rows are nested too, so the
-   un-dim rule (a direct-child selector) never matched them. Worse, opacity on
-   an ancestor creates a compositing group a descendant cannot escape, so even
-   a matching rule couldn't have restored them — the field the user was told
-   to fill in rendered dimmer than everything around it.
+   History, because this rule has been wrong twice:
 
-   Dimming is now done by the cutout on the highlight itself (below), which is
-   immune to nesting. `pointer-events` is kept here because, unlike opacity, it
-   *does* re-enable correctly on a descendant of a disabled ancestor. */
-.habit-tracker-modal.habit-tracker-walkthrough-active > *:not(.habit-tracker-walkthrough-tooltip) {
-	pointer-events: none;
-}
+   1. It originally dimmed with `opacity: 0.25` on every direct child and
+      restored `opacity: 1` on the highlight. That silently failed for 8 of
+      the 13 steps — Identity/Goal live in identityWrap, Build-Break in
+      typeWrap, Commit in commitWrap, and the four Four-Laws rows are nested
+      too, so the direct-child un-dim never matched them. Worse, opacity on an
+      ancestor creates a compositing group a descendant can't escape, so no
+      rule could have rescued them: the field the user was told to fill in
+      rendered dimmer than everything around it.
+
+   2. Replacing that with `pointer-events: none` fixed the dimming but created
+      a trap. Blur used to advance the tour, so clicking away from a filled
+      field moved to the next step — and the field you'd just been typing in
+      was then click-blocked. You could not get back into your own text.
+
+   Dimming is now done entirely by the cutout on the highlight (below), which
+   is immune to nesting and needs no counterpart rule. Keeping the user "on
+   rails" is handled by the spotlight visually, not by blocking input —
+   see bindAdvance() in main.ts, where blur is deliberately inert. */
 
 /* Spotlight. The dark wash is painted by the highlighted element itself as a
    9999px shadow spreading in every direction, so the "hole" is exactly this
@@ -1997,7 +2046,6 @@ body.is-mobile .habit-tracker-actions {
 .habit-tracker-walkthrough-highlight {
 	position: relative;
 	z-index: 50;
-	pointer-events: auto;
 	outline: 1px solid color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
 	outline-offset: 6px;
 	border-radius: var(--ht-radius-md);
@@ -2037,20 +2085,17 @@ body.is-mobile .habit-tracker-actions {
    --wt-arrow-x (horizontal offset, aligned to the target's left edge and
    clamped inside the tooltip) and flips the whole thing via the -above class
    when there isn't room below the field. */
+/* Default: tooltip sits below the field, arrow points up off its top edge. */
 .habit-tracker-walkthrough-tooltip::after {
 	content: "";
 	position: absolute;
 	left: var(--wt-arrow-x, 22px);
+	top: -6px;
 	width: 10px;
 	height: 10px;
 	background-color: var(--htx-card);
 	transform: rotate(45deg);
 	pointer-events: none;
-}
-
-/* Default: tooltip sits below the field, arrow points up off its top edge. */
-.habit-tracker-walkthrough-tooltip::after {
-	top: -6px;
 	border-left: 1px solid var(--htx-glow-violet);
 	border-top: 1px solid var(--htx-glow-violet);
 	border-right: none;
@@ -2290,6 +2335,38 @@ body.is-mobile .habit-tracker-actions {
 
 .habit-tracker-done-toggle:hover {
 	color: var(--text-normal);
+}
+
+/* Same dashed-card shape and hover-glow pattern as .habit-tracker-add-card,
+   themed gold (matching .habit-tracker-archive-btn's own accent) instead of
+   violet, so this reads as a peer action row rather than the plain muted
+   text .habit-tracker-done-toggle uses for the Done-tasks section. */
+.habit-tracker-archived-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 12px;
+	margin-top: 8px;
+	border: 1.5px dashed var(--htx-card-border);
+	border-radius: var(--ht-radius-xl);
+	color: var(--htx-text-muted);
+	font-size: 0.88em;
+	font-weight: 500;
+	cursor: pointer;
+	user-select: none;
+	transition: border-color 0.12s ease, color 0.12s ease, background-color 0.12s ease, transform 0.1s ease, box-shadow 0.12s ease;
+}
+
+.habit-tracker-archived-toggle:active {
+	transform: scale(0.98);
+}
+
+.habit-tracker-archived-toggle:hover {
+	border-color: var(--htx-gold);
+	color: var(--htx-gold-bright);
+	background-color: color-mix(in srgb, var(--htx-gold) 12%, transparent);
+	box-shadow: 0 0 16px color-mix(in srgb, var(--htx-gold) 30%, transparent);
 }
 
 .habit-tracker-done-section {
@@ -2534,6 +2611,13 @@ body.is-mobile .habit-tracker-actions {
 	.habit-tracker-habit,
 	.habit-tracker-habit:hover {
 		transform: none;
+	}
+
+	/* The walkthrough's spotlight and rings stay fully visible — they carry
+	   meaning, not decoration. Only their transitions are dropped, so the
+	   emphasis snaps between steps instead of easing. */
+	.habit-tracker-walkthrough-focus {
+		transition: none !important;
 	}
 }
 
@@ -2980,4 +3064,450 @@ body.is-mobile .habit-tracker-actions {
 .habit-tweak-textarea:focus {
 	border-color: #8b5cf6 !important;
 	box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25) !important;
+}
+
+/* ---- Day view ----
+   One full-width check bar per habit rather than a grid of one. A lone
+   square would leave most of the card empty and read as a cropped Week
+   view; a bar reads as a checklist row and gives a large tap target, which
+   is the point of a today-only view on a phone.
+
+   The bar reuses .habit-tracker-week-cell so it inherits every state class
+   already defined for boxed cells (-done / -missed / -future / -min,
+   at-risk pulse, today ring). Everything below only overrides shape. */
+.habit-tracker-day-grid {
+	display: flex;
+	padding: 2px 0;
+}
+
+.habit-tracker-week-cell.habit-tracker-day-cell {
+	flex: 1;
+	/* Cancels the square aspect + max-width that Week/Month cells rely on. */
+	aspect-ratio: auto;
+	max-width: none;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--ht-space-3);
+	min-height: 58px;
+	padding: 0 var(--htx-card-pad);
+}
+
+.habit-tracker-day-when {
+	display: flex;
+	align-items: baseline;
+	gap: var(--ht-space-2);
+	min-width: 0;
+}
+
+.habit-tracker-day-weekday {
+	font-family: var(--htx-font-display);
+	font-size: 1.25em;
+	font-weight: var(--htx-num-weight);
+	letter-spacing: var(--htx-tracking);
+}
+
+.habit-tracker-day-date {
+	font-size: 0.82em;
+	color: var(--htx-text-muted);
+	white-space: nowrap;
+}
+
+.habit-tracker-day-status {
+	font-size: 0.78em;
+	color: var(--htx-text-muted);
+	text-align: right;
+	white-space: nowrap;
+}
+
+/* On a completed bar the fill is the habit's own color, so both the
+   date and the status line switch to its contrast color — same rule the
+   week cell's labels already follow. */
+.habit-tracker-day-cell.habit-tracker-week-cell-done .habit-tracker-day-date,
+.habit-tracker-day-cell.habit-tracker-week-cell-done .habit-tracker-day-status {
+	color: var(--habit-color-contrast, var(--text-on-accent));
+}
+
+/* Narrow panes: drop the status text rather than let it wrap under the
+   date and double the bar's height. The fill state still reads. */
+@media (max-width: 420px) {
+	.habit-tracker-day-status {
+		display: none;
+	}
+}
+
+body.is-mobile .habit-tracker-week-cell.habit-tracker-day-cell {
+	min-height: 64px;
+}
+
+/* ---- Scheduled days ------------------------------------------------------
+   A habit can be pinned to specific weekdays. Off-days still render, so the
+   calendar keeps its shape across habits with different schedules — they're
+   just visibly not yours: hollow, dimmed, and inert. The exception is a
+   repair day, which is an off-day temporarily unlocked to make up a missed
+   scheduled day; it's ringed in the streak gold to read as "this restores
+   something" rather than as an ordinary check-in. */
+
+.habit-tracker-cell-offday,
+.habit-tracker-week-cell.habit-tracker-cell-offday {
+	/* Deliberately hollow: a missed day is a filled cell you left empty, an
+	   off-day is not a cell you owed at all. The dashed edge has to stay
+	   legible or the two read the same, which defeats the point — so this
+	   is a visible dash at reduced opacity rather than a faint one. */
+	background-color: transparent;
+	border: 1px dashed color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
+	box-shadow: none;
+	opacity: 0.75;
+	cursor: default;
+}
+
+/* The year/year-days cells are only a few px across, where a dashed border
+   collapses into a smudge. Drop the dash there and separate off-days from
+   missed ones by fill instead: missed keeps its solid grey, off-day is a
+   near-empty outline. */
+.habit-tracker-cell.habit-tracker-cell-offday,
+.habit-tracker-yeardays-cell.habit-tracker-cell-offday {
+	border-style: solid;
+	border-color: color-mix(in srgb, var(--htx-glow-violet) 30%, transparent);
+	opacity: 0.5;
+}
+
+/* An unlocked repair day is the one off-day the user CAN act on, so it gets
+   the streak gold rather than the accent violet — it's about the streak. */
+.habit-tracker-cell-repairable,
+.habit-tracker-week-cell.habit-tracker-cell-repairable {
+	opacity: 1;
+	cursor: pointer;
+	border-style: solid;
+	border-color: color-mix(in srgb, var(--htx-gold) 70%, transparent);
+	box-shadow: 0 0 10px color-mix(in srgb, var(--htx-gold) 30%, transparent);
+	animation: habit-tracker-repair-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes habit-tracker-repair-pulse {
+	0%, 100% { box-shadow: 0 0 8px color-mix(in srgb, var(--htx-gold) 22%, transparent); }
+	50% { box-shadow: 0 0 16px color-mix(in srgb, var(--htx-gold) 45%, transparent); }
+}
+
+/* A used repair keeps the habit's own fill (it counted, same as any other
+   completion) but carries an inset gold ring so it stays distinguishable
+   from a completion earned on schedule. */
+.habit-tracker-cell-repair,
+.habit-tracker-week-cell.habit-tracker-cell-repair {
+	opacity: 1;
+	border-style: solid;
+	border-color: color-mix(in srgb, var(--htx-gold) 60%, transparent);
+	box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--htx-gold-bright) 55%, transparent);
+}
+
+/* Both repair states must outrank the small-cell off-day rule above, which
+   shares their .habit-tracker-cell/.habit-tracker-yeardays-cell prefix —
+   without these the year view renders a used repair as a washed-out grey
+   instead of a filled cell with its gold ring. */
+.habit-tracker-cell.habit-tracker-cell-repairable,
+.habit-tracker-yeardays-cell.habit-tracker-cell-repairable {
+	opacity: 1;
+	border-color: color-mix(in srgb, var(--htx-gold) 70%, transparent);
+}
+
+.habit-tracker-cell.habit-tracker-cell-repair,
+.habit-tracker-yeardays-cell.habit-tracker-cell-repair {
+	opacity: 1;
+	border-color: color-mix(in srgb, var(--htx-gold) 60%, transparent);
+}
+
+/* Streak held pending a repair — amber, not red: nothing is lost yet. */
+.habit-tracker-pill-streak-at-risk {
+	outline: 1px solid color-mix(in srgb, var(--htx-gold) 55%, transparent);
+	animation: habit-tracker-repair-pulse 1.8s ease-in-out infinite;
+}
+
+.habit-tracker-repair-hint {
+	font-size: 0.7em;
+	font-weight: 600;
+	letter-spacing: var(--htx-tracking);
+	color: var(--htx-gold-bright);
+	align-self: center;
+	margin-left: 2px;
+}
+
+.habit-tracker-schedule-badge {
+	font-size: 0.6em;
+	font-weight: 700;
+	letter-spacing: var(--htx-tracking);
+	padding: 2px 6px;
+	border-radius: var(--ht-radius-sm);
+	color: color-mix(in srgb, var(--htx-text) 80%, transparent);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 18%, var(--htx-bg-2));
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+
+/* ---- Day picker (Add/Edit Habit form) ---- */
+
+/* Equal-width columns rather than flex, so every chip is exactly the same
+   size no matter how wide its label renders. As a wrapping flex row each
+   chip sized to its own text, so "Wed" came out wider than "Sun" and the
+   wrapped rows didn't line up. auto-fill packs as many equal columns as the
+   control's width allows and a short final row keeps the same column width
+   instead of stretching to fill.
+   A plain div below the "Days" Setting, not that Setting's own control (see
+   HabitFormModal) — Obsidian lays a Setting's control out beside its name/
+   description by default, which squeezed these 8 chips into a narrow
+   right-hand column; sitting below the full-width description instead
+   gives the whole row room to lay the week out properly. */
+.habit-tracker-daypicker {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(3.4em, 1fr));
+	gap: 4px;
+	width: 100%;
+	/* Extra top clearance vs. the 4px every other gap in this picker uses —
+	   today's chip floats a "Today" badge above its own top edge (see
+	   .habit-tracker-daypicker-today-badge), and this is the room for it. */
+	margin-top: 14px;
+	margin-bottom: 20px;
+}
+
+.habit-tracker-daypicker-chip {
+	position: relative;
+	font-size: 0.75em;
+	font-weight: 700;
+	letter-spacing: var(--htx-tracking);
+	/* Horizontal padding drops out — the grid column sets the width now, and
+	   keeping it would fight the track sizing on narrow panes. */
+	padding: 5px 0;
+	text-align: center;
+	border-radius: var(--ht-radius-sm);
+	border: var(--htx-hairline) solid color-mix(in srgb, var(--htx-glow-violet) 35%, transparent);
+	background-color: transparent;
+	color: color-mix(in srgb, var(--htx-text) 55%, transparent);
+	cursor: pointer;
+	transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+/* Which weekday it actually is right now, independent of and unaffected by
+   that day's checked state — a small pill floating above the chip's own
+   top edge so it never competes with the ✓/label text on the same line. */
+.habit-tracker-daypicker-today-badge {
+	position: absolute;
+	top: -9px;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 1px 5px;
+	border-radius: var(--ht-radius-pill);
+	background-color: var(--htx-gold);
+	color: #2a1a00;
+	font-size: 0.8em;
+	font-weight: 700;
+	letter-spacing: 0;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+.habit-tracker-daypicker-chip:hover {
+	border-color: var(--htx-glow-violet);
+}
+
+.habit-tracker-daypicker-on {
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 65%, var(--htx-bg-2));
+	border-color: var(--htx-glow-violet);
+	color: var(--htx-text);
+}
+
+/* Same chip shape/size as the 7 day chips above (same grid, same class),
+   dashed border only to read as a bulk action on them rather than an
+   eighth day — matching the dashed-border language .habit-tracker-add-card
+   and .habit-tracker-archived-toggle already use for their own actions. */
+.habit-tracker-daypicker-all {
+	border-style: dashed;
+	font-weight: 600;
+}
+
+.habit-tracker-daypicker-all:hover {
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 18%, transparent);
+}
+
+/* ---- Streaks view --------------------------------------------------------
+   A read-only breakdown: every habit and task in tracker order, each with
+   its records, its consistency, and a rolling 365-day timeline. Nothing
+   here is clickable — this page is for understanding history, not editing
+   it, so no cell carries a hover or pointer affordance. */
+
+.habit-tracker-streaks {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.habit-tracker-streaks-row {
+	padding: var(--htx-card-pad, 12px);
+	border-radius: var(--ht-radius-lg, 10px);
+	border: var(--htx-hairline) solid color-mix(in srgb, var(--habit-color) 30%, transparent);
+	background: linear-gradient(180deg, color-mix(in srgb, var(--habit-color) 7%, transparent), transparent 60%);
+}
+
+.habit-tracker-streaks-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+
+.habit-tracker-streaks-name {
+	font-weight: 700;
+	color: var(--htx-text);
+	letter-spacing: var(--htx-tracking);
+}
+
+/* Auto-fit rather than a fixed column count: the same markup has to hold 4
+   stats for a task and up to 5 for a habit, and still wrap sanely on a
+   phone instead of overflowing the card. */
+.habit-tracker-streaks-stats {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.habit-tracker-streaks-stat {
+	padding: 6px 8px;
+	border-radius: var(--ht-radius-sm);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 10%, var(--htx-bg-2));
+}
+
+.habit-tracker-streaks-stat-value {
+	font-size: 1.15em;
+	font-weight: 700;
+	color: var(--htx-text);
+	font-variant-numeric: tabular-nums;
+}
+
+.habit-tracker-streaks-stat-label {
+	font-size: 0.68em;
+	letter-spacing: var(--htx-tracking);
+	text-transform: uppercase;
+	color: color-mix(in srgb, var(--htx-text) 55%, transparent);
+}
+
+.habit-tracker-streaks-trend-up .habit-tracker-streaks-stat-value { color: var(--htx-gold-bright); }
+.habit-tracker-streaks-trend-down .habit-tracker-streaks-stat-value { color: var(--htx-red); }
+
+.habit-tracker-streaks-runs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+
+.habit-tracker-streaks-runs-label {
+	font-size: 0.68em;
+	letter-spacing: var(--htx-tracking);
+	text-transform: uppercase;
+	color: color-mix(in srgb, var(--htx-text) 45%, transparent);
+}
+
+.habit-tracker-streaks-run {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 4px;
+	padding: 2px 7px;
+	border-radius: var(--ht-radius-sm);
+	background-color: color-mix(in srgb, var(--htx-gold) 14%, transparent);
+	border: var(--htx-hairline) solid color-mix(in srgb, var(--htx-gold) 30%, transparent);
+}
+
+.habit-tracker-streaks-run-len {
+	font-weight: 700;
+	color: var(--htx-gold-bright);
+	font-variant-numeric: tabular-nums;
+}
+
+.habit-tracker-streaks-run-range {
+	font-size: 0.72em;
+	color: color-mix(in srgb, var(--htx-text) 60%, transparent);
+}
+
+/* 365 cells on one row. They scale down rather than scrolling, because a
+   per-habit scroll container would let two rows fall out of alignment and
+   make comparing habits impossible — the whole reason this page exists. */
+.habit-tracker-streaks-timeline {
+	display: grid;
+	grid-template-columns: repeat(365, 1fr);
+	/* No gap. 365 gaps of even 1px need 365px on their own, which on a
+	   phone exceeds the whole rail and collapses every cell to zero width —
+	   the timeline disappears completely. Butting the cells together keeps
+	   it readable at any width; the state colours do the separating. */
+	gap: 0;
+	height: 22px;
+	border-radius: 3px;
+	overflow: hidden;
+}
+
+.habit-tracker-tl-cell {
+	border-radius: 1px;
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 12%, var(--htx-bg-2));
+}
+
+/* Before the habit existed. Faint rather than invisible: it still has to
+   read as part of one continuous rail, or a young habit looks like a
+   misaligned fragment floating at the right edge instead of a short
+   history. Dim enough that it never reads as failure. */
+.habit-tracker-tl-pre { background-color: color-mix(in srgb, var(--htx-text) 4%, transparent); }
+.habit-tracker-tl-off { background-color: color-mix(in srgb, var(--htx-glow-violet) 6%, transparent); }
+.habit-tracker-tl-missed { background-color: color-mix(in srgb, var(--htx-text) 9%, transparent); }
+.habit-tracker-tl-min { opacity: 0.55; }
+.habit-tracker-tl-repair { box-shadow: inset 0 0 0 1px var(--htx-gold-bright); }
+
+/* Six segments no longer fit a phone width, so the group scrolls sideways
+   on its own rather than wrapping to a second line and shoving the nav
+   buttons down with it. */
+.habit-tracker-view-toggle {
+	overflow-x: auto;
+	scrollbar-width: none;
+	max-width: 100%;
+	/* Must not wrap: wrapping puts the segments on two lines and pushes the
+	   nav buttons down, which is the failure mode the scroll is here to
+	   avoid in the first place. */
+	flex-wrap: nowrap;
+}
+
+.habit-tracker-view-toggle::-webkit-scrollbar { display: none; }
+
+.habit-tracker-streaks-scale {
+	position: relative;
+	display: flex;
+	justify-content: space-between;
+	margin-top: 3px;
+	font-size: 0.62em;
+	letter-spacing: var(--htx-tracking);
+	text-transform: uppercase;
+	color: color-mix(in srgb, var(--htx-text) 38%, transparent);
+}
+
+/* Sits at the rail position where the habit began, so it reads as a point
+   on the timeline rather than a caption for the whole thing. */
+.habit-tracker-streaks-scale-start {
+	position: absolute;
+	transform: translateX(-50%);
+	white-space: nowrap;
+	color: color-mix(in srgb, var(--habit-color) 75%, var(--htx-text));
+}
+
+/* On a narrow pane the rail is too short to place a start marker without it
+   colliding with the fixed end anchors, so it's dropped there — the rail's
+   own transition from dim to lit still shows where the habit began. */
+@media (max-width: 560px) {
+	.habit-tracker-streaks-scale-start { display: none; }
+}
+
+/* Icon beside a Streaks-view stat label. Sits inline with the label rather
+   than next to the big value, so the number stays the thing you read first
+   and the glyph acts as the row's identifier — matching how the habit
+   cards' pills pair an icon with the small label, not the figure. */
+.habit-tracker-streaks-stat-icon {
+	margin-right: 4px;
+	/* Emoji render optically larger than surrounding text at the same size;
+	   nudged down so the label's baseline still governs the row. */
+	font-size: 0.92em;
 }

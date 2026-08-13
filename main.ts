@@ -14,7 +14,7 @@ interface HabitDefinition {
 	createdAt: string; // YYYY-MM-DD
 	kind?: ItemKind; // default "habit"
 	scheduledDate?: string; // YYYY-MM-DD — only for kind: "task". Hidden from the tracker until this date.
-	archived?: boolean; // only for kind: "task" — set automatically once checked off; collapses it into the "Done" section.
+	archived?: boolean; // for kind: "task", set automatically once checked off, collapsing it into the "Done" section. For kind: "habit", set manually via the Archive action (ConfirmArchiveModal), collapsing it into the "Archived Habits" section — check-in history and streak are kept, and it's restorable anytime via the ↩️ button.
 	type?: HabitType; // default "build" — a "break" habit inverts the framing (Clear's four laws apply in reverse to quitting a habit), not the click mechanic: a checked day still means "I succeeded today" (i.e. "I resisted").
 	// The Complete Habit Formula — Clear's own four-part sentence structure,
 	// one field per Law of Behavior Change, 1:1:
@@ -38,6 +38,14 @@ interface HabitDefinition {
 	// habitDisplayName()) without touching the stored base `name`. Habit-only
 	// (meaningless for a one-off task).
 	timeOfDay?: "morning" | "midday" | "evening";
+	// Which weekdays this habit is actually meant to be done on, as
+	// getDay() numbers (0 = Sunday ... 6 = Saturday). Habit-only — a task
+	// already has its own scheduledDate. Undefined (or all seven listed)
+	// means "every day", which is the pre-scheduling behavior, so every
+	// habit created before this feature existed keeps its exact streak
+	// with no migration. See habitScheduledDays() and
+	// computeScheduledStreak() for how this reshapes the streak.
+	scheduledDays?: number[];
 }
 
 type TimeOfDay = "morning" | "midday" | "evening";
@@ -290,14 +298,29 @@ const COPY_SPEC: CopyDef[] = [
 	{ id: "stat.votes", label: "Total label", group: COPY_GROUP_STATS, def: "votes", help: "The all-time count. “votes” is the Atomic Habits framing." },
 	{ id: "stat.year", label: "This-year label", group: COPY_GROUP_STATS, def: "this year" },
 	{ id: "stat.streakIcon", label: "Streak icon", group: COPY_GROUP_STATS, def: "🔥" },
+	{ id: "stat.repair", label: "Repair hint", group: COPY_GROUP_STATS, vars: ["day"], def: "repair by {day}", help: "Shown on a scheduled habit whose missed day can still be made up on an off day." },
 	{ id: "stat.cleanIcon", label: "Streak icon (Break)", group: COPY_GROUP_STATS, def: "🛡️" },
 	{ id: "stat.bestIcon", label: "Best icon", group: COPY_GROUP_STATS, def: "🏆" },
+	{ id: "streaks.completionsIcon", label: "Completions icon (Streaks)", group: COPY_GROUP_STATS, def: "✅" },
+	{ id: "streaks.consistencyIcon", label: "Consistency icon (Streaks)", group: COPY_GROUP_STATS, def: "🎯" },
+	{ id: "streaks.trendIcon", label: "Trend icon (Streaks)", group: COPY_GROUP_STATS, def: "📈" },
+	{ id: "streaks.statusIcon", label: "Task status icon (Streaks)", group: COPY_GROUP_STATS, def: "✅" },
+	{ id: "streaks.scheduledIcon", label: "Task scheduled icon (Streaks)", group: COPY_GROUP_STATS, def: "📅" },
 
 	// --- Toolbar ---
+	{ id: "tb.day", label: "Day tab", group: COPY_GROUP_TOOLBAR, def: "Day" },
+	{ id: "day.done", label: "Day view — done", group: COPY_GROUP_TOOLBAR, def: "Done ✓" },
+	{ id: "day.minDone", label: "Day view — minimum done", group: COPY_GROUP_TOOLBAR, def: "Minimum version ✓" },
+	{ id: "day.notDone", label: "Day view — not done", group: COPY_GROUP_TOOLBAR, def: "Not yet — click to check off" },
+	{ id: "day.upcoming", label: "Day view — future day", group: COPY_GROUP_TOOLBAR, def: "Upcoming" },
+	{ id: "day.offDay", label: "Day view — not scheduled", group: COPY_GROUP_TOOLBAR, def: "Not scheduled today" },
+	{ id: "day.repairOpen", label: "Day view — repair available", group: COPY_GROUP_TOOLBAR, def: "Off day — make up a missed day" },
+	{ id: "day.repairDone", label: "Day view — repaired", group: COPY_GROUP_TOOLBAR, def: "Made up ✓" },
 	{ id: "tb.week", label: "Week tab", group: COPY_GROUP_TOOLBAR, def: "Week" },
 	{ id: "tb.month", label: "Month tab", group: COPY_GROUP_TOOLBAR, def: "Month" },
 	{ id: "tb.year", label: "Year tab", group: COPY_GROUP_TOOLBAR, def: "Year" },
 	{ id: "tb.yeardays", label: "Year-Days tab", group: COPY_GROUP_TOOLBAR, def: "Year - Days" },
+	{ id: "tb.streaks", label: "Streaks tab", group: COPY_GROUP_TOOLBAR, def: "Streaks", help: "Opens the in-depth streak breakdown for every habit and task." },
 	{ id: "tb.today", label: "Today button", group: COPY_GROUP_TOOLBAR, def: "Today" },
 	{ id: "tb.reorder", label: "Reorder button", group: COPY_GROUP_TOOLBAR, def: "⠿ Reorder" },
 	{ id: "tb.walkthrough", label: "Walkthrough button", group: COPY_GROUP_TOOLBAR, def: "🎓 Creation Walkthrough" },
@@ -344,6 +367,12 @@ const COPY_SPEC: CopyDef[] = [
 	{ id: "st.deleteConfirm", label: "Delete typed-confirm prompt", group: COPY_GROUP_STATES, multiline: true, vars: ["n"], def: "This habit has {n} logged days. Type its name to confirm." },
 	{ id: "st.deleteCancel", label: "Delete cancel button", group: COPY_GROUP_STATES, def: "Cancel" },
 	{ id: "st.deleteConfirmBtn", label: "Delete confirm button", group: COPY_GROUP_STATES, def: "Delete" },
+	{ id: "st.archivedSection", label: "Archived section", group: COPY_GROUP_STATES, def: "📦 Archived ({n})", vars: ["n"] },
+	{ id: "st.archiveTitle", label: "Archive title", group: COPY_GROUP_STATES, def: "Archive habit?" },
+	{ id: "st.archiveBody", label: "Archive body", group: COPY_GROUP_STATES, multiline: true, vars: ["name"], def: '"{name}" will move to Archived Habits. Its check-in history and streak are kept, and you can restore it anytime.' },
+	{ id: "st.archiveConfirm", label: "Archive typed-confirm prompt", group: COPY_GROUP_STATES, def: 'Type "Archive" to confirm.' },
+	{ id: "st.archiveCancel", label: "Archive cancel button", group: COPY_GROUP_STATES, def: "Cancel" },
+	{ id: "st.archiveConfirmBtn", label: "Archive confirm button", group: COPY_GROUP_STATES, def: "Archive" },
 
 	// --- Walkthrough ---
 	{ id: "wt.intro", label: "Intro tooltip", group: COPY_GROUP_WALK, def: '👇 Click "+ Add habit" below to start' },
@@ -657,6 +686,106 @@ function autoGrow(el: HTMLTextAreaElement) {
 	el.style.height = el.scrollHeight + "px";
 }
 
+// ---- Scheduling ----
+// A habit can be pinned to specific weekdays (HabitDefinition.scheduledDays).
+// Everything below treats "no schedule" and "all seven days" as the same
+// thing — a plain daily habit — so the scheduled code path IS the daily code
+// path, rather than two parallel implementations that can drift apart.
+
+const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function habitScheduledDays(habit: HabitDefinition): number[] {
+	const days = habit.scheduledDays;
+	if (!days || days.length === 0 || days.length >= 7) return ALL_WEEKDAYS;
+	return days;
+}
+
+function isDailyHabit(habit: HabitDefinition): boolean {
+	return habitScheduledDays(habit).length === 7;
+}
+
+function isScheduledOn(habit: HabitDefinition, date: Date): boolean {
+	return habitScheduledDays(habit).includes(date.getDay());
+}
+
+// The next/previous calendar date this habit is scheduled for, exclusive of
+// `from`. Bounded at 7 steps because any non-empty weekday set repeats
+// weekly — if nothing matches in 7 days, nothing ever will.
+function nextScheduledDate(habit: HabitDefinition, from: Date): Date {
+	for (let i = 1; i <= 7; i++) {
+		const d = addDays(from, i);
+		if (isScheduledOn(habit, d)) return d;
+	}
+	return addDays(from, 1);
+}
+
+function prevScheduledDate(habit: HabitDefinition, from: Date): Date {
+	for (let i = 1; i <= 7; i++) {
+		const d = addDays(from, -i);
+		if (isScheduledOn(habit, d)) return d;
+	}
+	return addDays(from, -1);
+}
+
+// Sunday-start week key ("YYYY-MM-DD" of that week's Sunday), matching the
+// Sunday-Saturday week that computeStats' totalThisWeek and the Week view
+// already use. Repair quota is one per calendar week, keyed by this.
+function weekKey(date: Date): string {
+	return formatDate(addDays(date, -date.getDay()));
+}
+
+// The off-days that can repair a missed scheduled day: everything strictly
+// between the miss and the next scheduled day. For a Mon/Wed/Sat habit,
+// missing Monday opens exactly Tuesday; the window shuts when Wednesday
+// arrives. A daily habit has no gap between scheduled days, so this is
+// always empty — daily habits can never be repaired, which is what keeps
+// their behavior identical to before.
+function repairWindow(habit: HabitDefinition, missed: Date): Date[] {
+	const end = nextScheduledDate(habit, missed);
+	const out: Date[] = [];
+	for (let d = addDays(missed, 1); formatDate(d) < formatDate(end); d = addDays(d, 1)) out.push(d);
+	return out;
+}
+
+// Is `date` an off-day currently unlocked for repair — i.e. the scheduled
+// day it follows was missed, the window is still open, and this week's one
+// repair hasn't been spent? Drives the cell's clickable/locked state.
+function isRepairUnlocked(habit: HabitDefinition, entries: Record<string, EntryValue>, date: Date): boolean {
+	if (isScheduledOn(habit, date)) return false;
+	if (isDailyHabit(habit)) return false;
+	const missed = prevScheduledDate(habit, date);
+	if (entries[formatDate(missed)]) return false;
+	if (formatDate(missed) < formatDate(new Date(habit.createdAt))) return false;
+	// Window must still be open: the next scheduled day after the miss
+	// hasn't arrived yet.
+	if (formatDate(nextScheduledDate(habit, missed)) <= todayStr()) return false;
+	return !isRepairSpent(habit, entries, date, formatDate(date));
+}
+
+// Has this habit already used its one repair for `date`'s week? `exclude`
+// lets a caller ask "ignoring this day itself".
+function isRepairSpent(
+	habit: HabitDefinition,
+	entries: Record<string, EntryValue>,
+	date: Date,
+	exclude: string
+): boolean {
+	const key = weekKey(date);
+	for (const dateStr in entries) {
+		if (!entries[dateStr] || dateStr === exclude) continue;
+		const d = new Date(dateStr + "T00:00:00");
+		if (weekKey(d) !== key) continue;
+		if (isScheduledOn(habit, d)) continue;
+		// An off-day check-in that sits in some miss's repair window is a
+		// spent repair.
+		const missed = prevScheduledDate(habit, d);
+		if (!entries[formatDate(missed)]) return true;
+	}
+	return false;
+}
+
 interface Stats {
 	streak: number;
 	bestStreak: number;
@@ -664,9 +793,15 @@ interface Stats {
 	totalThisWeek: number;
 	totalThisMonth: number;
 	totalThisYear: number;
+	// True when the most recent scheduled day was missed but its repair
+	// window is still open — the streak is held at its current number
+	// rather than reset, pending that repair. Purely a display signal.
+	atRisk: boolean;
+	// The last date the pending miss can still be repaired on, or null.
+	repairBy: string | null;
 }
 
-function computeStats(entries: Record<string, EntryValue>): Stats {
+function computeStats(habit: HabitDefinition, entries: Record<string, EntryValue>): Stats {
 	let total = 0;
 	let totalThisWeek = 0;
 	let totalThisMonth = 0;
@@ -686,27 +821,107 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 		}
 	}
 
-	// Streak: forgiving — a single missed day doesn't reset it, only two
-	// missed days in a row do. Today is always given grace (not counted as
-	// a miss) since the day isn't over yet.
-	let streak = 0;
-	let missStreak = 0;
-	let cursor = new Date();
-	let isToday = true;
-	while (true) {
-		const dateStr = formatDate(cursor);
-		if (entries[dateStr]) {
-			streak++;
-			missStreak = 0;
-		} else if (!isToday) {
-			missStreak++;
-			if (missStreak >= 2) break;
+	const { streak, atRisk, repairBy } = computeScheduledStreak(habit, entries);
+
+	return {
+		streak,
+		bestStreak: computeBestStreak(habit, entries),
+		total,
+		totalThisWeek,
+		totalThisMonth,
+		totalThisYear,
+		atRisk,
+		repairBy,
+	};
+}
+
+interface StreakResult {
+	streak: number;
+	atRisk: boolean;
+	repairBy: string | null;
+}
+
+// Current streak, counted in *scheduled occurrences* rather than calendar
+// days: a Mon/Wed/Sat habit done on all three reads as a 3-streak, and the
+// Thursday/Friday in between are not misses because nothing was owed then.
+//
+// Two rules apply depending on the schedule, and the split is deliberate:
+//
+//   Daily habits (no schedule, or all seven days) keep the original
+//   forgiving rule — one missed day survives, two consecutive reset — so
+//   every habit that predates this feature reports exactly the streak it
+//   always did. This is the regression-guarded path.
+//
+//   Scheduled habits are strict: a missed scheduled day resets the streak.
+//   What softens that is the repair window (see repairWindow) — the streak
+//   is held, not lost, while an off-day repair is still possible, and only
+//   collapses once that window shuts unused.
+function computeScheduledStreak(habit: HabitDefinition, entries: Record<string, EntryValue>): StreakResult {
+	if (isDailyHabit(habit)) {
+		let streak = 0;
+		let missStreak = 0;
+		let cursor = new Date();
+		let isToday = true;
+		while (true) {
+			const dateStr = formatDate(cursor);
+			if (entries[dateStr]) {
+				streak++;
+				missStreak = 0;
+			} else if (!isToday) {
+				missStreak++;
+				if (missStreak >= 2) break;
+			}
+			isToday = false;
+			cursor = addDays(cursor, -1);
 		}
-		isToday = false;
-		cursor = addDays(cursor, -1);
+		return { streak, atRisk: isStreakAtRisk(habit, entries), repairBy: null };
 	}
 
-	return { streak, bestStreak: computeBestStreak(entries), total, totalThisWeek, totalThisMonth, totalThisYear };
+	const floor = formatDate(new Date(habit.createdAt + "T00:00:00"));
+	const today = new Date();
+	const todayKey = todayStr();
+	// Weeks whose single repair has already been consumed by a more recent
+	// miss. Walking newest-first means the most recent repair is the one
+	// that counts when two misses compete for the same week's allowance.
+	const spentWeeks = new Set<string>();
+	let streak = 0;
+	let atRisk = false;
+	let repairBy: string | null = null;
+
+	let cursor = isScheduledOn(habit, today) ? today : prevScheduledDate(habit, today);
+	while (formatDate(cursor) >= floor) {
+		const dateStr = formatDate(cursor);
+
+		if (entries[dateStr]) {
+			streak++;
+		} else if (dateStr === todayKey) {
+			// Today is never a miss — the day isn't over yet.
+		} else {
+			const window = repairWindow(habit, cursor);
+			const repairDay = window.find((d) => entries[formatDate(d)]);
+			const windowOpen = formatDate(nextScheduledDate(habit, cursor)) > todayKey;
+
+			if (repairDay && !spentWeeks.has(weekKey(repairDay))) {
+				spentWeeks.add(weekKey(repairDay));
+				streak++;
+			} else if (repairDay) {
+				// An off-day check-in exists but this week's repair was
+				// already used by a later miss — it can't cover this one.
+				break;
+			} else if (windowOpen && window.length > 0 && !spentWeeks.has(weekKey(window[0]))) {
+				// Still repairable: hold the count and flag it, rather than
+				// showing a break that a check-in tomorrow would undo.
+				atRisk = true;
+				repairBy = formatDate(window[window.length - 1]);
+			} else {
+				break;
+			}
+		}
+
+		cursor = prevScheduledDate(habit, cursor);
+	}
+
+	return { streak, atRisk, repairBy };
 }
 
 // Longest streak ever achieved (same forgiving one-gap rule as the current
@@ -714,26 +929,184 @@ function computeStats(entries: Record<string, EntryValue>): Stats {
 // today. Surfacing this alongside the current streak matters because
 // Clear's "don't break the chain" framing is about the record you're
 // building, not just today's status.
-function computeBestStreak(entries: Record<string, EntryValue>): number {
-	const doneDates = Object.keys(entries)
-		.filter((d) => entries[d])
-		.sort();
-	if (doneDates.length === 0) return 0;
+function computeBestStreak(habit: HabitDefinition, entries: Record<string, EntryValue>): number {
+	if (isDailyHabit(habit)) {
+		const doneDates = Object.keys(entries)
+			.filter((d) => entries[d])
+			.sort();
+		if (doneDates.length === 0) return 0;
 
-	let best = 1;
-	let current = 1;
-	for (let i = 1; i < doneDates.length; i++) {
-		const prev = new Date(doneDates[i - 1]);
-		const cur = new Date(doneDates[i]);
-		const diffDays = Math.round((cur.getTime() - prev.getTime()) / 86400000);
-		if (diffDays === 1 || diffDays === 2) {
-			current++;
-		} else {
-			current = 1;
+		let best = 1;
+		let current = 1;
+		for (let i = 1; i < doneDates.length; i++) {
+			const prev = new Date(doneDates[i - 1]);
+			const cur = new Date(doneDates[i]);
+			const diffDays = Math.round((cur.getTime() - prev.getTime()) / 86400000);
+			if (diffDays === 1 || diffDays === 2) {
+				current++;
+			} else {
+				current = 1;
+			}
+			best = Math.max(best, current);
 		}
-		best = Math.max(best, current);
+		return best;
+	}
+
+	// Scheduled habits: same strict-with-repair rule as the current streak,
+	// scanned forward. Note the quota tie-break runs the other way here —
+	// walking oldest-first, the earliest repair in a week claims that
+	// week's allowance, where the backward walk gives it to the latest.
+	// Both are defensible; neither can change a streak's length by more
+	// than the one repair they disagree about.
+	//
+	// Only the habit's CURRENT schedule is known — schedule changes aren't
+	// recorded — so history is always re-read through today's weekdays.
+	// Changing a habit's days can therefore move its best-ever streak.
+	const todayKey = todayStr();
+	const floorDate = new Date(habit.createdAt + "T00:00:00");
+	const spentWeeks = new Set<string>();
+	let best = 0;
+	let current = 0;
+
+	let cursor = isScheduledOn(habit, floorDate) ? floorDate : nextScheduledDate(habit, floorDate);
+	while (formatDate(cursor) <= todayKey) {
+		const dateStr = formatDate(cursor);
+		if (entries[dateStr]) {
+			current++;
+			best = Math.max(best, current);
+		} else if (dateStr !== todayKey) {
+			const repairDay = repairWindow(habit, cursor).find((d) => entries[formatDate(d)]);
+			if (repairDay && !spentWeeks.has(weekKey(repairDay))) {
+				spentWeeks.add(weekKey(repairDay));
+				current++;
+				best = Math.max(best, current);
+			} else {
+				current = 0;
+			}
+		}
+		cursor = nextScheduledDate(habit, cursor);
 	}
 	return best;
+}
+
+// ---- Streaks view analytics -------------------------------------------
+// Everything the Streaks tab shows is derived here from `entries` plus the
+// habit's schedule — nothing new is persisted. The occurrence list is the
+// shared spine: for a daily habit it's every day since creation, for a
+// scheduled one it's only the days that habit was actually due.
+
+// "2026-08-15" -> "Aug 15". Used in the Streaks view's run chips, where
+// the full ISO date is too wide to sit inline.
+function shortDate(iso: string): string {
+	return new Date(iso + "T00:00:00").toLocaleString("default", { month: "short", day: "numeric" });
+}
+
+interface StreakRun {
+	start: string;
+	end: string;
+	length: number;
+	// The occurrence that ended the run, or null if the run is still live.
+	brokenOn: string | null;
+}
+
+interface Consistency {
+	// Occurrences owed since the habit was created, excluding today (the
+	// day isn't over, so counting it would drag every rate down).
+	owed: number;
+	met: number;
+	rate: number; // 0-100
+	recentRate: number; // last 30 occurrences
+	priorRate: number; // the 30 before those
+}
+
+// Every date this habit was due, oldest first, from creation through today.
+function occurrenceDates(habit: HabitDefinition, through: Date = new Date()): Date[] {
+	const out: Date[] = [];
+	const end = formatDate(through);
+	const daily = isDailyHabit(habit);
+	let cursor = new Date(habit.createdAt + "T00:00:00");
+	if (!daily && !isScheduledOn(habit, cursor)) cursor = nextScheduledDate(habit, cursor);
+	// Hard bound: a corrupt or absurd createdAt shouldn't spin forever.
+	let guard = 0;
+	while (formatDate(cursor) <= end && guard++ < 20000) {
+		out.push(cursor);
+		cursor = daily ? addDays(cursor, 1) : nextScheduledDate(habit, cursor);
+	}
+	return out;
+}
+
+// Was this occurrence satisfied — either checked off directly, or covered
+// by an off-day repair? Mirrors the streak rules so the page can never
+// disagree with the number on the card.
+function occurrenceMet(habit: HabitDefinition, entries: Record<string, EntryValue>, date: Date, spentWeeks: Set<string>): boolean {
+	if (entries[formatDate(date)]) return true;
+	if (isDailyHabit(habit)) return false;
+	const repairDay = repairWindow(habit, date).find((d) => entries[formatDate(d)]);
+	if (!repairDay || spentWeeks.has(weekKey(repairDay))) return false;
+	spentWeeks.add(weekKey(repairDay));
+	return true;
+}
+
+// Completed streak runs, oldest first. The longest of these always equals
+// computeBestStreak() — asserted in the test harness, since two functions
+// that disagree about the best streak would be worse than either alone.
+function computeStreakRuns(habit: HabitDefinition, entries: Record<string, EntryValue>): StreakRun[] {
+	const occurrences = occurrenceDates(habit);
+	const todayKey = todayStr();
+	const daily = isDailyHabit(habit);
+	const spentWeeks = new Set<string>();
+	const runs: StreakRun[] = [];
+
+	let runStart: Date | null = null;
+	let runEnd: Date | null = null;
+	let length = 0;
+	let pendingGap = false; // daily only: one missed day is survivable
+
+	const close = (brokenOn: string | null) => {
+		if (runStart && runEnd && length > 0) {
+			runs.push({ start: formatDate(runStart), end: formatDate(runEnd), length, brokenOn });
+		}
+		runStart = null;
+		runEnd = null;
+		length = 0;
+		pendingGap = false;
+	};
+
+	for (const date of occurrences) {
+		const dateStr = formatDate(date);
+		if (occurrenceMet(habit, entries, date, spentWeeks)) {
+			if (!runStart) runStart = date;
+			runEnd = date;
+			length++;
+			pendingGap = false;
+		} else if (dateStr === todayKey) {
+			// Today is never a break — the day isn't over.
+		} else if (daily && !pendingGap && length > 0) {
+			// First missed day of a daily habit: survivable, so hold.
+			pendingGap = true;
+		} else {
+			close(length > 0 ? dateStr : null);
+		}
+	}
+	close(null);
+	return runs;
+}
+
+function computeConsistency(habit: HabitDefinition, entries: Record<string, EntryValue>): Consistency {
+	const todayKey = todayStr();
+	const occurrences = occurrenceDates(habit).filter((d) => formatDate(d) !== todayKey);
+	const spentWeeks = new Set<string>();
+	const met: boolean[] = occurrences.map((d) => occurrenceMet(habit, entries, d, spentWeeks));
+	const owed = met.length;
+	const metCount = met.filter(Boolean).length;
+	const pct = (arr: boolean[]) => (arr.length === 0 ? 0 : Math.round((arr.filter(Boolean).length / arr.length) * 100));
+	return {
+		owed,
+		met: metCount,
+		rate: pct(met),
+		recentRate: pct(met.slice(-30)),
+		priorRate: pct(met.slice(-60, -30)),
+	};
 }
 
 // Evening cutoff (local time) after which an unmarked today starts reading
@@ -745,12 +1118,23 @@ const AT_RISK_HOUR = 18;
 // active streak that will actually break at midnight if today stays blank.
 // A habit with no streak yet (yesterday blank) has nothing to protect, so
 // it doesn't get the at-risk treatment.
-function isStreakAtRisk(entries: Record<string, EntryValue>): boolean {
+function isStreakAtRisk(habit: HabitDefinition, entries: Record<string, EntryValue>): boolean {
 	if (new Date().getHours() < AT_RISK_HOUR) return false;
 	const today = todayStr();
 	if (entries[today]) return false;
-	const yesterday = formatDate(addDays(new Date(), -1));
-	return !!entries[yesterday];
+
+	if (isDailyHabit(habit)) {
+		const yesterday = formatDate(addDays(new Date(), -1));
+		return !!entries[yesterday];
+	}
+
+	// Scheduled habits are at risk on two kinds of evening: one where the
+	// habit is actually owed today, and one where today is the last chance
+	// to repair an earlier miss.
+	const now = new Date();
+	if (isRepairUnlocked(habit, entries, now)) return true;
+	if (!isScheduledOn(habit, now)) return false;
+	return computeScheduledStreak(habit, entries).streak > 0;
 }
 
 // Toggles a day's state: empty -> full -> empty. A day previously marked
@@ -784,6 +1168,16 @@ interface HabitFormValues extends HabitLevers {
 	alarmTime: string;
 	alarmRepeatMinutes: number;
 	timeOfDay: TimeOfDay | "";
+	// getDay() numbers this habit is scheduled for. Always a full 0-6 set
+	// for a daily habit, so the form never has to special-case "unset".
+	scheduledDays: number[];
+	// The day tracking starts. This is the floor for every streak and
+	// consistency calculation (see occurrenceDates), so it's editable rather
+	// than silently stamped: a habit set up at 9pm would otherwise owe its
+	// creation day immediately and open at ~50% consistency with no way to
+	// correct it short of back-filling a day you never actually intended to
+	// track. Defaults to today when creating.
+	createdAt: string;
 }
 
 // The Complete Habit Formula fields, matching the Four Laws 1:1.
@@ -1030,6 +1424,10 @@ function habitFieldsFromFormValues(values: HabitFormValues): Omit<HabitDefinitio
 		alarmTime: values.alarmTime,
 		alarmRepeatMinutes: values.alarmRepeatMinutes,
 		timeOfDay: values.timeOfDay || undefined,
+		// Stored only when it actually constrains something — a full week is
+		// left undefined so daily habits keep the exact shape they had
+		// before scheduling existed.
+		scheduledDays: values.scheduledDays.length >= 7 ? undefined : [...values.scheduledDays].sort(),
 		stackedAfter: values.stackedAfter.trim() || undefined,
 		craving: values.craving.trim() || undefined,
 		minimumVersion: values.minimumVersion.trim() || undefined,
@@ -1094,6 +1492,8 @@ class HabitFormModal extends Modal {
 			alarmTime: opts.initial?.alarmTime ?? "20:00",
 			alarmRepeatMinutes: opts.initial?.alarmRepeatMinutes ?? 10,
 			timeOfDay: opts.initial?.timeOfDay ?? "",
+			scheduledDays: opts.initial ? habitScheduledDays(opts.initial as HabitDefinition) : [...ALL_WEEKDAYS],
+			createdAt: opts.initial?.createdAt ?? todayStr(),
 			stackedAfter: opts.initial?.stackedAfter ?? "",
 			craving: opts.initial?.craving ?? "",
 			minimumVersion: opts.initial?.minimumVersion ?? "",
@@ -1159,7 +1559,7 @@ class HabitFormModal extends Modal {
 			advanceOnEnter(text.inputEl);
 		});
 
-		const timeOfDayWrap = contentEl.createDiv();
+		const timeOfDayWrap = contentEl.createDiv({ cls: "habit-tracker-form-field-wrap" });
 		habitOnlySections.push(timeOfDayWrap);
 		new Setting(timeOfDayWrap)
 			.setName("Time of Day")
@@ -1172,6 +1572,118 @@ class HabitFormModal extends Modal {
 				dd.setValue(this.values.timeOfDay);
 				dd.onChange((v) => {
 					this.values.timeOfDay = v as TimeOfDay | "";
+				});
+			});
+
+		const scheduledDaysWrap = contentEl.createDiv({ cls: "habit-tracker-form-field-wrap" });
+		habitOnlySections.push(scheduledDaysWrap);
+		new Setting(scheduledDaysWrap)
+			.setName("Days")
+			.setDesc(
+				"Which days this habit is due. Streaks count scheduled days only — Mon/Wed/Sat done three times is a 3-day streak. Miss one and an off-day unlocks to make it up (once a week)."
+			);
+		// A plain sibling div, not this Setting's own controlEl — Setting
+		// lays its control out beside the name/description by default
+		// (a narrow column of chips squeezed to the right of the paragraph),
+		// where a full-width row below the description reads much better
+		// for 8 chips.
+		const dayChips = scheduledDaysWrap.createDiv({ cls: "habit-tracker-daypicker" });
+		const chipEls: HTMLElement[] = [];
+		const chipLabelEls: HTMLElement[] = [];
+		let allChip: HTMLButtonElement;
+		let allChipLabel: HTMLElement;
+		// getDay() already matches this file's own day-index convention —
+		// 0 = Sunday .. 6 = Saturday, same order as ALL_WEEKDAYS/WEEKDAY_SHORT.
+		const todayWeekday = new Date().getDay();
+		// A checkmark (not just the filled background already on
+		// habit-tracker-daypicker-on) so a selected day reads unambiguously
+		// as "checked" even at a glance, the same way a done heatmap cell
+		// isn't just colored but visibly marked. Label text lives in its own
+		// child span (not chip.setText on the button itself) so repainting
+		// it can't wipe out today's chip's separate "Today" badge span.
+		const paintChips = () => {
+			chipEls.forEach((chip, day) => {
+				const on = this.values.scheduledDays.includes(day);
+				chip.toggleClass("habit-tracker-daypicker-on", on);
+				chipLabelEls[day].setText((on ? "✓ " : "") + WEEKDAY_SHORT[day]);
+			});
+			const allOn = this.values.scheduledDays.length === 7;
+			allChip.toggleClass("habit-tracker-daypicker-on", allOn);
+			allChipLabel.setText((allOn ? "✓ " : "") + "All");
+		};
+		// Leftmost, in day order (All, Sun, Mon, ... Sat) — same grid, same
+		// chip shape, so it reads as part of the picker rather than a
+		// separate control, but a dashed border (matching the Add Habit
+		// card's own "bulk action" affordance elsewhere in this plugin)
+		// keeps it visually distinct from the 7 day chips it acts on. A
+		// second click un-marks every day rather than just re-selecting all
+		// (a plain toggle, mirroring a table's own "select all" checkbox) —
+		// unlike a single day chip, this bypasses the "at least one day"
+		// guard below: an empty scheduledDays already means "every day" to
+		// habitScheduledDays() elsewhere, the same as all 7 explicitly
+		// checked, so clearing here changes nothing about how the habit
+		// actually runs, only how the picker looks mid-edit.
+		allChip = dayChips.createEl("button", { cls: "habit-tracker-daypicker-chip habit-tracker-daypicker-all" });
+		allChip.type = "button";
+		allChip.setAttr("aria-label", "Mark or unmark every day");
+		allChipLabel = allChip.createSpan();
+		allChip.onclick = () => {
+			this.values.scheduledDays = this.values.scheduledDays.length === 7 ? [] : [...ALL_WEEKDAYS];
+			paintChips();
+		};
+		ALL_WEEKDAYS.forEach((day) => {
+			const chip = dayChips.createEl("button", { cls: "habit-tracker-daypicker-chip" });
+			chip.type = "button";
+			chip.setAttr("aria-label", WEEKDAY_LONG[day] + (day === todayWeekday ? " (today)" : ""));
+			// Which weekday it actually is right now — independent of
+			// selection state, so it stays put whether or not that day is
+			// checked. Small and out of the way (top edge of the chip), not
+			// competing with the ✓/label text for the same line.
+			if (day === todayWeekday) {
+				chip.createSpan({ cls: "habit-tracker-daypicker-today-badge", text: "Today" });
+			}
+			chipLabelEls[day] = chip.createSpan();
+			chip.onclick = () => {
+				const on = this.values.scheduledDays.includes(day);
+				// Never let the last day be turned off via an individual chip
+				// — a habit due on no day at all, arrived at one accidental
+				// click at a time, has no clear meaning. The All chip above
+				// is the deliberate, unambiguous way to clear everything.
+				if (on && this.values.scheduledDays.length === 1) {
+					new Notice("A habit needs at least one day.");
+					return;
+				}
+				this.values.scheduledDays = on
+					? this.values.scheduledDays.filter((d) => d !== day)
+					: [...this.values.scheduledDays, day];
+				paintChips();
+			};
+			chipEls.push(chip);
+		});
+		paintChips();
+
+		// Start date. Sits with the Days picker because the two together are
+		// what decide which days this habit owes — and therefore what its
+		// consistency percentage is measured against.
+		const startWrap = contentEl.createDiv({ cls: "habit-tracker-form-field-wrap" });
+		habitOnlySections.push(startWrap);
+		new Setting(startWrap)
+			.setName("Tracking since")
+			.setDesc("The first day this habit counts. Consistency and streaks are measured from here — move it forward if you set the habit up too late in the day to actually do it.")
+			.addText((text) => {
+				text.inputEl.type = "date";
+				// A future start date would leave zero days owed, which reads
+				// as 0% consistency rather than "not started yet", so the
+				// picker simply can't go past today.
+				text.inputEl.max = todayStr();
+				text.setValue(this.values.createdAt).onChange((v) => {
+					if (!v) return;
+					if (v > todayStr()) {
+						new Notice("Tracking can't start in the future.");
+						text.setValue(this.values.createdAt);
+						return;
+					}
+					this.values.createdAt = v;
 				});
 			});
 
@@ -1339,7 +1851,7 @@ class HabitFormModal extends Modal {
 		PALETTE.forEach((c) => renderSwatch(c, false));
 		this.plugin.data.customColors.forEach((c) => renderSwatch(c, true));
 
-		const typeWrap = contentEl.createDiv();
+		const typeWrap = contentEl.createDiv({ cls: "habit-tracker-form-field-wrap" });
 		habitOnlySections.push(typeWrap);
 		let typeSelectEl: HTMLSelectElement;
 		const typeSetting = new Setting(typeWrap).setName("Type").addDropdown((dd) => {
@@ -1726,21 +2238,45 @@ class HabitFormModal extends Modal {
 		const positionTooltip = (target: HTMLElement) => {
 			const contentRect = contentEl.getBoundingClientRect();
 			const targetRect = target.getBoundingClientRect();
-			const top = targetRect.bottom - contentRect.top + contentEl.scrollTop + 10;
+			// Target position in contentEl's scroll coordinate space.
+			const targetTop = targetRect.top - contentRect.top + contentEl.scrollTop;
+			const targetBottom = targetRect.bottom - contentRect.top + contentEl.scrollTop;
+
 			const maxLeft = Math.max(0, contentEl.clientWidth - tooltip.offsetWidth);
 			const left = Math.min(Math.max(0, targetRect.left - contentRect.left), maxLeft);
+
+			// Flip above when placing below would run past the bottom of the
+			// visible form and there's room overhead. Without this the tooltip
+			// always went below, which on late steps forced contentEl to grow
+			// its padding and scroll the field up toward the top edge — the
+			// user ended up reading a tooltip whose field had drifted away.
+			const gap = 12;
+			const wouldOverflow = targetBottom + gap + tooltip.offsetHeight > contentEl.scrollTop + contentEl.clientHeight;
+			const roomAbove = targetTop - contentEl.scrollTop > tooltip.offsetHeight + gap;
+			const placeAbove = wouldOverflow && roomAbove;
+
+			const top = placeAbove ? targetTop - tooltip.offsetHeight - gap : targetBottom + gap;
 			tooltip.style.top = `${top}px`;
 			tooltip.style.left = `${left}px`;
+			tooltip.toggleClass("habit-tracker-walkthrough-tooltip-above", placeAbove);
 
-			// The tooltip is position: absolute, so on a step near the
-			// bottom of the form its true bottom edge can sit past
-			// contentEl's normal-flow content height — contentEl.scrollHeight
-			// (and therefore how far it can actually scroll) doesn't
-			// reliably grow to include it, so scrolling alone can leave the
-			// tooltip's bottom permanently clipped by the modal's own edge
-			// with nowhere further to scroll to. Force real scrollable room
-			// to exist by padding contentEl out to the tooltip's bottom
-			// before scrolling to it.
+			// Point the arrow at the target rather than just sitting under it.
+			// Offset is measured from the tooltip's own left edge, clamped so
+			// the arrow never slides off its corners (which happens when the
+			// tooltip is pushed left by maxLeft but the target is far right).
+			const targetCenter = targetRect.left - contentRect.left + Math.min(targetRect.width / 2, 90);
+			const arrowX = Math.min(Math.max(targetCenter - left, 16), Math.max(16, tooltip.offsetWidth - 26));
+			tooltip.style.setProperty("--wt-arrow-x", `${arrowX}px`);
+
+			// Only the below-placement can overflow the form's scrollable
+			// height — when flipped above, the tooltip sits over existing
+			// content and needs no extra room. The tooltip is position:
+			// absolute, so on a step near the bottom its true bottom edge can
+			// sit past contentEl's normal-flow content height;
+			// contentEl.scrollHeight doesn't reliably grow to include it, so
+			// scrolling alone would leave it clipped by the modal's edge with
+			// nowhere further to scroll. Force real scrollable room to exist.
+			if (placeAbove) return;
 			const tooltipBottom = top + tooltip.offsetHeight + 16;
 			if (tooltipBottom > contentEl.scrollHeight) {
 				contentEl.style.paddingBottom = `${tooltipBottom - contentEl.scrollHeight + parseFloat(contentEl.style.paddingBottom || "0")}px`;
@@ -1754,7 +2290,12 @@ class HabitFormModal extends Modal {
 
 		const endWalkthrough = () => {
 			active = false;
-			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
+			steps.forEach((s) => {
+				s.target.removeClass("habit-tracker-walkthrough-highlight");
+				// Must clear too, or the last step's input keeps its bright
+				// ring for the rest of the modal's life.
+				s.focusEl?.removeClass("habit-tracker-walkthrough-focus");
+			});
 			contentEl.removeClass("habit-tracker-walkthrough-active");
 			contentEl.style.paddingBottom = "";
 			tooltip.remove();
@@ -1779,8 +2320,16 @@ class HabitFormModal extends Modal {
 			if (i < 0) return;
 			stepIndex = i;
 			const step = steps[stepIndex];
-			steps.forEach((s) => s.target.removeClass("habit-tracker-walkthrough-highlight"));
+			steps.forEach((s) => {
+				s.target.removeClass("habit-tracker-walkthrough-highlight");
+				s.focusEl?.removeClass("habit-tracker-walkthrough-focus");
+			});
 			step.target.addClass("habit-tracker-walkthrough-highlight");
+			// Tier two of the emphasis: the row gets the spotlight, the input
+			// inside it gets its own bright ring, so "this section" and "type
+			// in this box" read as different things. Steps without a focusEl
+			// (Color, whose target is the swatch row itself) just get the row.
+			step.focusEl?.addClass("habit-tracker-walkthrough-focus");
 			progressEl.setText(`Step ${stepIndex + 1} of ${steps.length}`);
 			titleEl.setText(typeof step.title === "function" ? step.title() : step.title);
 			bodyEl.setText(typeof step.body === "function" ? step.body() : step.body);
@@ -1821,15 +2370,15 @@ class HabitFormModal extends Modal {
 			if (!el || index < 0) return;
 			el.addEventListener(type, (e: Event) => {
 				if (!active || stepIndex !== index) return;
-				// A blur fires (moving focus off the current field) the
-				// instant the user mousedowns on Skip/Back/Next — BEFORE
-				// that button's own click handler runs. Without this guard,
-				// this listener would fire showStep()'s scrollIntoView on
-				// its way to the next field a beat before endWalkthrough()
-				// (from Skip) tears the tour down, which visibly scrolls the
-				// form even though the tour is closing — reading exactly
-				// like "Skip just went to the next field" instead of
-				// closing.
+				// Defensive: only meaningful for focus-type events, and
+				// nothing currently binds one (text fields advance on Enter
+				// instead — see the keydown handler below). Kept because it
+				// guards a subtle ordering bug if a blur binding is ever
+				// added back: blur fires the instant the user mousedowns on
+				// Skip/Back/Next, BEFORE that button's own click handler, so
+				// without this the tour would scroll toward the next field a
+				// beat before endWalkthrough() tears it down — reading like
+				// "Skip advanced a step" rather than closing.
 				const related = (e as FocusEvent).relatedTarget as HTMLElement | null;
 				if (related === skipBtn || related === backBtn || related === nextBtn) return;
 				if (predicate && !predicate()) return;
@@ -1837,13 +2386,42 @@ class HabitFormModal extends Modal {
 			});
 		};
 
+		// Text fields advance on Enter, never on blur.
+		//
+		// Blur used to advance whenever the field was non-empty, which meant
+		// clicking anywhere — empty space, another field, the form background
+		// — counted as "done with this step". Combined with the walkthrough's
+		// interaction gate that left users locked out of the text they had
+		// just typed. Enter is an unambiguous "I'm finished with this field";
+		// merely looking away is not, so blur is deliberately inert now and
+		// clicking off and back on a field is a no-op for the tour.
+		//
+		// The lever fields are textareas that auto-grow, so Enter would
+		// otherwise insert a newline. preventDefault() keeps it as a commit
+		// key; Shift+Enter still inserts a real newline for multi-line notes.
 		steps.forEach((step, i) => {
 			const el = step.focusEl;
-			if (el instanceof HTMLTextAreaElement) {
-				bindAdvance(el, "blur", i, () => el.value.trim().length > 0);
-			} else if (el instanceof HTMLInputElement && el.type !== "checkbox") {
-				bindAdvance(el, "blur", i, () => el.value.trim().length > 0);
-			}
+			const isText = el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && el.type !== "checkbox");
+			if (!isText) return;
+			const field = el as HTMLTextAreaElement | HTMLInputElement;
+			field.addEventListener("keydown", (e: KeyboardEvent) => {
+				if (e.key !== "Enter" || e.shiftKey) return;
+				if (!active || stepIndex !== i) return;
+				if (field.value.trim().length === 0) return;
+				e.preventDefault();
+				showStep(i + 1);
+			});
+		});
+
+		// Clicking into any field re-syncs the tour to that step, so the
+		// spotlight follows the user instead of stranding them somewhere
+		// else in the form. Guarded on stepIndex so re-focusing the current
+		// field (the common case, after clicking away and back) does nothing.
+		steps.forEach((step, i) => {
+			step.focusEl?.addEventListener("focus", () => {
+				if (!active || stepIndex === i) return;
+				showStep(i);
+			});
 		});
 		bindAdvance(
 			refs.swatchRow,
@@ -2079,6 +2657,63 @@ class ConfirmDeleteModal extends Modal {
 		}
 		deleteBtn.onclick = () => {
 			if (needsTypedConfirm && confirmInput?.value !== this.habitName) return;
+			this.onConfirm();
+			this.close();
+		};
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+// Archiving isn't destructive (history/streak are kept, restorable anytime
+// via ↩️), so unlike ConfirmDeleteModal above there's no entry-count
+// threshold — typing "Archive" is always required, a fixed word rather than
+// the habit's own name, so it can't be satisfied by accidentally pasting the
+// name from somewhere else.
+class ConfirmArchiveModal extends Modal {
+	habitName: string;
+	onConfirm: () => void;
+	plugin: HabitTrackerPlugin;
+
+	constructor(plugin: HabitTrackerPlugin, habitName: string, onConfirm: () => void) {
+		super(plugin.app);
+		this.plugin = plugin;
+		this.habitName = habitName;
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.addClass("habit-tracker-modal");
+		contentEl.createEl("h3", { text: copyText(this.plugin.settings.designCopy, "st.archiveTitle") });
+		contentEl.createEl("p", {
+			text: copyText(this.plugin.settings.designCopy, "st.archiveBody", { name: this.habitName }),
+		});
+		contentEl.createEl("p", {
+			cls: "habit-tracker-settings-label",
+			text: copyText(this.plugin.settings.designCopy, "st.archiveConfirm"),
+		});
+		const confirmInput = contentEl.createEl("input", {
+			type: "text",
+			placeholder: "Archive",
+			cls: "habit-tracker-reset-confirm-input",
+		});
+
+		const footer = contentEl.createDiv({ cls: "habit-tracker-modal-footer" });
+		const cancelBtn = footer.createEl("button", { text: copyText(this.plugin.settings.designCopy, "st.archiveCancel") });
+		cancelBtn.onclick = () => this.close();
+		const archiveBtn = footer.createEl("button", {
+			text: copyText(this.plugin.settings.designCopy, "st.archiveConfirmBtn"),
+			cls: "mod-warning",
+		});
+		archiveBtn.disabled = true;
+		confirmInput.addEventListener("input", () => {
+			archiveBtn.disabled = confirmInput.value !== "Archive";
+		});
+		archiveBtn.onclick = () => {
+			if (confirmInput.value !== "Archive") return;
 			this.onConfirm();
 			this.close();
 		};
@@ -2805,8 +3440,8 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 	}
 }
 
-type ViewMode = "week" | "month" | "year" | "yeardays";
-type CellStyle = "year" | "week" | "month" | "yeardays";
+type ViewMode = "day" | "week" | "month" | "year" | "yeardays" | "streaks";
+type CellStyle = "year" | "week" | "month" | "yeardays" | "day";
 
 class HabitTrackerBlock extends MarkdownRenderChild {
 	plugin: HabitTrackerPlugin;
@@ -2820,6 +3455,9 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	// Same idea, for Week view: an integer offset in weeks from the real
 	// current week (0 = this week, +1 = next, -1 = previous, ...).
 	selectedWeekOffset: number = 0;
+	// Same in-memory, resets-on-load pattern as the other view offsets: an
+	// integer offset in days from today (0 = today, -1 = yesterday).
+	selectedDayOffset: number = 0;
 	// Same idea, for Year and Year-Days view (they share one offset since
 	// both show a single calendar year): an integer offset in years from
 	// the real current year (0 = this year, +1 = next, -1 = previous, ...).
@@ -2880,6 +3518,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	render() {
 		const el = this.containerEl;
 
+
 		// Capture the current scroll position of every year-view grid
 		// before we tear the DOM down, so it can be restored after rebuild
 		// instead of snapping back to the start.
@@ -2905,7 +3544,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		// mixed into the regular habit grid list. Once checked off they
 		// auto-archive into a collapsed Done section below.
 		const today = todayStr();
-		const habits = allItems.filter((h) => h.kind !== "task");
+		const habits = allItems.filter((h) => h.kind !== "task" && !h.archived);
+		const archivedHabits = allItems.filter((h) => h.kind !== "task" && h.archived);
 		const pendingTasks = allItems.filter((h) => h.kind === "task" && !h.archived && (h.scheduledDate ?? "") <= today);
 		const doneTasks = allItems.filter((h) => h.kind === "task" && h.archived);
 
@@ -2920,8 +3560,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			walkthroughBtn.onclick = () => this.showAddHabitIntro();
 		}
 		const toggle = leftGroup.createDiv({ cls: "habit-tracker-view-toggle" });
-		const modeLabels: Record<ViewMode, string> = { week: copyText(this.plugin.settings.designCopy, "tb.week"), month: copyText(this.plugin.settings.designCopy, "tb.month"), year: copyText(this.plugin.settings.designCopy, "tb.year"), yeardays: copyText(this.plugin.settings.designCopy, "tb.yeardays") };
-		(["week", "month", "year", "yeardays"] as ViewMode[]).forEach((mode) => {
+		const modeLabels: Record<ViewMode, string> = { day: copyText(this.plugin.settings.designCopy, "tb.day"), week: copyText(this.plugin.settings.designCopy, "tb.week"), month: copyText(this.plugin.settings.designCopy, "tb.month"), year: copyText(this.plugin.settings.designCopy, "tb.year"), yeardays: copyText(this.plugin.settings.designCopy, "tb.yeardays"), streaks: copyText(this.plugin.settings.designCopy, "tb.streaks") };
+		(["day", "week", "month", "year", "yeardays", "streaks"] as ViewMode[]).forEach((mode, modeIndex) => {
 			const b = toggle.createEl("button", {
 				text: modeLabels[mode],
 				cls: "habit-tracker-view-btn" + (this.currentView === mode ? " habit-tracker-view-btn-active" : ""),
@@ -2929,6 +3569,13 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			b.onclick = () => {
 				this.currentView = mode;
 				this.render();
+				// With six segments the group scrolls on a narrow pane, so
+				// pull the newly-chosen one into view. This lives in the
+				// click handler, NOT in render(): running it on every render
+				// meant checking off a habit dragged the toggle row — and
+				// with it the whole note — back to the top.
+				const again = this.containerEl.querySelectorAll<HTMLElement>(".habit-tracker-view-btn")[modeIndex];
+				again?.scrollIntoView({ block: "nearest", inline: "nearest" });
 			};
 		});
 
@@ -2945,7 +3592,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			navMonth.setMonth(navMonth.getMonth() + this.selectedMonthOffset);
 			monthNav.createSpan({
 				text: navMonth.toLocaleString("default", { month: "long", year: "numeric" }),
-				cls: "habit-tracker-view-nav-label",
+				cls: "habit-tracker-view-nav-label habit-tracker-view-nav-label-month",
 			});
 			const nextBtn = monthNav.createEl("button", { text: "▶", cls: "habit-tracker-view-nav-btn" });
 			nextBtn.type = "button";
@@ -2960,6 +3607,44 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				todayBtn.setAttr("aria-label", "Back to current month");
 				todayBtn.onclick = () => {
 					this.selectedMonthOffset = 0;
+					this.render();
+				};
+			}
+		}
+
+		if (this.currentView === "day") {
+			const dayNav = leftGroup.createDiv({ cls: "habit-tracker-view-nav" });
+			const prevBtn = dayNav.createEl("button", { text: "◀", cls: "habit-tracker-view-nav-btn" });
+			prevBtn.type = "button";
+			prevBtn.setAttr("aria-label", "Previous day");
+			prevBtn.onclick = () => {
+				this.selectedDayOffset -= 1;
+				this.render();
+			};
+			const navDay = addDays(new Date(), this.selectedDayOffset);
+			// "Today"/"Yesterday" rather than a bare date for the two days
+			// you'd actually be back-filling — a date string alone makes you
+			// do the arithmetic to work out where you are.
+			const dayLabel =
+				this.selectedDayOffset === 0
+					? `Today · ${navDay.toLocaleString("default", { weekday: "long", month: "short", day: "numeric" })}`
+					: this.selectedDayOffset === -1
+					? `Yesterday · ${navDay.toLocaleString("default", { weekday: "long", month: "short", day: "numeric" })}`
+					: navDay.toLocaleString("default", { weekday: "long", month: "short", day: "numeric", year: navDay.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+			dayNav.createSpan({ text: dayLabel, cls: "habit-tracker-view-nav-label habit-tracker-view-nav-label-day" });
+			const nextBtn = dayNav.createEl("button", { text: "▶", cls: "habit-tracker-view-nav-btn" });
+			nextBtn.type = "button";
+			nextBtn.setAttr("aria-label", "Next day");
+			nextBtn.onclick = () => {
+				this.selectedDayOffset += 1;
+				this.render();
+			};
+			if (this.selectedDayOffset !== 0) {
+				const todayBtn = dayNav.createEl("button", { text: copyText(this.plugin.settings.designCopy, "tb.today"), cls: "habit-tracker-view-today-btn" });
+				todayBtn.type = "button";
+				todayBtn.setAttr("aria-label", "Back to today");
+				todayBtn.onclick = () => {
+					this.selectedDayOffset = 0;
 					this.render();
 				};
 			}
@@ -2981,7 +3666,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			const endLabel = navWeekEnd.toLocaleString("default", { month: "short", day: "numeric", year: "numeric" });
 			weekNav.createSpan({
 				text: `${startLabel} – ${endLabel}`,
-				cls: "habit-tracker-view-nav-label",
+				cls: "habit-tracker-view-nav-label habit-tracker-view-nav-label-week",
 			});
 			const nextBtn = weekNav.createEl("button", { text: "▶", cls: "habit-tracker-view-nav-btn" });
 			nextBtn.type = "button";
@@ -3034,16 +3719,21 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 
 		if (!this.filterName) {
-			const reorderBtn = toggleRow.createEl("button", {
-				text: copyText(this.plugin.settings.designCopy, "tb.reorder"),
-				cls: "habit-tracker-reorder-btn" + (this.reorderModeActive ? " habit-tracker-reorder-btn-active" : ""),
-			});
-			reorderBtn.type = "button";
-			reorderBtn.setAttr("aria-label", this.reorderModeActive ? "Exit reorder mode" : "Reorder habits");
-			reorderBtn.onclick = () => {
-				this.reorderModeActive = !this.reorderModeActive;
-				this.render();
-			};
+			// Reorder is hidden on the Streaks view — that page is read-only
+			// and has no draggable cards — but the gear stays, so settings
+			// remain reachable from every view.
+			if (this.currentView !== "streaks") {
+				const reorderBtn = toggleRow.createEl("button", {
+					text: copyText(this.plugin.settings.designCopy, "tb.reorder"),
+					cls: "habit-tracker-reorder-btn" + (this.reorderModeActive ? " habit-tracker-reorder-btn-active" : ""),
+				});
+				reorderBtn.type = "button";
+				reorderBtn.setAttr("aria-label", this.reorderModeActive ? "Exit reorder mode" : "Reorder habits");
+				reorderBtn.onclick = () => {
+					this.reorderModeActive = !this.reorderModeActive;
+					this.render();
+				};
+			}
 
 			const gearBtn = toggleRow.createEl("button", { text: "⚙️", cls: "habit-tracker-gear-btn" });
 			gearBtn.type = "button";
@@ -3051,7 +3741,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			gearBtn.onclick = () => this.toggleSettingsPanel();
 		}
 
-		const visibleCount = habits.length + pendingTasks.length + doneTasks.length;
+		const visibleCount = habits.length + pendingTasks.length + doneTasks.length + archivedHabits.length;
 		if (visibleCount === 0 && !this.filterName) {
 			const empty = el.createDiv({ cls: "habit-tracker-empty" });
 			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyIcon"), cls: "habit-tracker-empty-icon" });
@@ -3064,6 +3754,11 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			const empty = el.createDiv({ cls: "habit-tracker-empty" });
 			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyFilterIcon"), cls: "habit-tracker-empty-icon" });
 			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyFilterTitle", { name: this.filterName ?? "" }), cls: "habit-tracker-empty-title" });
+		}
+
+		if (this.currentView === "streaks") {
+			this.renderStreaksPage(el, allItems.filter((h) => !h.archived));
+			return;
 		}
 
 		const list = el.createDiv({ cls: "habit-tracker-list" });
@@ -3082,6 +3777,28 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			}
 			doneToggle.onclick = () => {
 				doneSection.toggleClass("habit-tracker-done-section-visible", !doneSection.hasClass("habit-tracker-done-section-visible"));
+			};
+		}
+
+		// Same collapsed-section behavior as Done tasks above (reuses
+		// .habit-tracker-done-section for the collapsible content — archived
+		// habits keep full cards, history/streak still visible, rather than
+		// a stripped-down row, since restoring one via its ↩️ button should
+		// show exactly what's being brought back). The toggle itself gets
+		// its own look, not .habit-tracker-done-toggle's plain muted text —
+		// styled like .habit-tracker-add-card below (same dashed-card shape
+		// and hover glow) so it reads as a peer action, not a footnote.
+		if (archivedHabits.length > 0) {
+			const archivedToggle = el.createDiv({
+				cls: "habit-tracker-archived-toggle",
+				text: copyText(this.plugin.settings.designCopy, "st.archivedSection", { n: archivedHabits.length }),
+			});
+			const archivedSection = el.createDiv({ cls: "habit-tracker-done-section" });
+			for (const habit of archivedHabits) {
+				this.renderHabit(archivedSection, habit);
+			}
+			archivedToggle.onclick = () => {
+				archivedSection.toggleClass("habit-tracker-done-section-visible", !archivedSection.hasClass("habit-tracker-done-section-visible"));
 			};
 		}
 
@@ -3111,7 +3828,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					id: slugify(values.name) + "-" + Date.now(),
 					name: values.name,
 					color: values.color,
-					createdAt: todayStr(),
+					createdAt: values.createdAt || todayStr(),
 					type: values.type,
 					kind: values.kind,
 					scheduledDate: values.kind === "task" ? values.scheduledDate : undefined,
@@ -3119,6 +3836,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					alarmTime: values.kind === "task" ? undefined : values.alarmTime,
 					alarmRepeatMinutes: values.kind === "task" ? undefined : values.alarmRepeatMinutes,
 					timeOfDay: values.kind === "task" ? undefined : (values.timeOfDay || undefined),
+					scheduledDays:
+						values.kind === "task" || values.scheduledDays.length >= 7 ? undefined : [...values.scheduledDays].sort(),
 					stackedAfter: values.stackedAfter || undefined,
 					craving: values.craving || undefined,
 					minimumVersion: values.minimumVersion || undefined,
@@ -3143,15 +3862,19 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				// real, likely collision that would silently overwrite one
 				// habit's `entries` map with the other's.
 				const copyId = slugify(copyValues.name) + "-copy-" + Date.now();
+				// Both halves keep the original's start date — a split is a
+				// reshaping of an existing habit, not two brand-new ones, so
+				// resetting to today would wipe its accumulated history from
+				// every consistency figure.
 				const originalHabit: HabitDefinition = {
 					id: originalId,
-					createdAt: todayStr(),
+					createdAt: originalValues.createdAt || todayStr(),
 					kind: "habit",
 					...habitFieldsFromFormValues(originalValues),
 				};
 				const copyHabit: HabitDefinition = {
 					id: copyId,
-					createdAt: todayStr(),
+					createdAt: copyValues.createdAt || todayStr(),
 					kind: "habit",
 					...habitFieldsFromFormValues(copyValues),
 				};
@@ -3396,9 +4119,162 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		}
 	}
 
+	// The Streaks view: every habit and task on one screen, in tracker
+	// order, each with its records, its consistency, and a rolling-365-day
+	// timeline. Read-only by design — this is where you go to understand the
+	// history, not to change it, so no cell here is clickable.
+	renderStreaksPage(el: HTMLElement, items: HabitDefinition[]) {
+		const page = el.createDiv({ cls: "habit-tracker-streaks" });
+
+		if (items.length === 0) {
+			const empty = page.createDiv({ cls: "habit-tracker-empty" });
+			empty.createDiv({ text: copyText(this.plugin.settings.designCopy, "st.emptyIcon"), cls: "habit-tracker-empty-icon" });
+			empty.createDiv({ text: "Nothing to break down yet", cls: "habit-tracker-empty-title" });
+			return;
+		}
+
+		for (const item of items) {
+			const entries = this.plugin.data.entries[item.id] || {};
+			const isTask = item.kind === "task";
+			const row = page.createDiv({ cls: "habit-tracker-streaks-row" });
+			row.style.setProperty("--habit-color", item.color);
+
+			// --- header
+			const head = row.createDiv({ cls: "habit-tracker-streaks-head" });
+			const dot = head.createSpan({ cls: "habit-tracker-dot" });
+			dot.style.backgroundColor = item.color;
+			head.createSpan({ text: habitDisplayName(item), cls: "habit-tracker-streaks-name" });
+			if (isTask) {
+				head.createSpan({ text: "TASK", cls: "habit-tracker-schedule-badge" });
+			} else if (!isDailyHabit(item)) {
+				head.createSpan({
+					text: habitScheduledDays(item).map((d) => WEEKDAY_SHORT[d]).join(" · "),
+					cls: "habit-tracker-schedule-badge",
+				});
+			}
+
+			// --- records + analytics
+			const statGrid = row.createDiv({ cls: "habit-tracker-streaks-stats" });
+			// Icons match the ones the habit cards already use in the Day/
+			// Week/Month views, so a metric is recognisable by the same glyph
+			// wherever it appears — the Streaks grid was the one surface
+			// showing these numbers with bare labels.
+			const stat = (label: string, value: string, title?: string, icon?: string) => {
+				const cell = statGrid.createDiv({ cls: "habit-tracker-streaks-stat" });
+				cell.createDiv({ text: value, cls: "habit-tracker-streaks-stat-value" });
+				const labelEl = cell.createDiv({ cls: "habit-tracker-streaks-stat-label" });
+				if (icon) labelEl.createSpan({ text: icon, cls: "habit-tracker-streaks-stat-icon" });
+				labelEl.createSpan({ text: label });
+				if (title) cell.setAttr("title", title);
+			};
+			const cd = this.plugin.settings.designCopy;
+			// A Break habit counts clean days, so it takes the shield the
+			// card's streak pill uses rather than the flame.
+			const streakIcon = copyText(cd, item.type === "break" ? "stat.cleanIcon" : "stat.streakIcon");
+
+			if (isTask) {
+				// A task is a one-off: it has no streak to speak of, so the
+				// streak columns show an em-dash with an explanation rather
+				// than a misleading zero or an empty hole in the grid.
+				const done = Object.keys(entries).some((d) => entries[d]);
+				stat("streak", "—", "Tasks are one-offs — they don't carry a streak.", streakIcon);
+				stat("best", "—", "Tasks are one-offs — they don't carry a streak.", copyText(cd, "stat.bestIcon"));
+				stat("status", done ? "done" : "open", undefined, copyText(cd, "streaks.statusIcon"));
+				stat("scheduled", item.scheduledDate ?? "—", undefined, copyText(cd, "streaks.scheduledIcon"));
+			} else {
+				const stats = computeStats(item, entries);
+				const runs = computeStreakRuns(item, entries);
+				const con = computeConsistency(item, entries);
+				const unit = isDailyHabit(item) ? "days" : "sessions";
+
+				stat("current", `${stats.streak}`, `Counted in ${unit}.`, streakIcon);
+				stat("best", `${stats.bestStreak}`, `Longest run ever, counted in ${unit}.`, copyText(cd, "stat.bestIcon"));
+				stat("completions", `${stats.total}`, undefined, copyText(cd, "streaks.completionsIcon"));
+				stat(
+					"consistency",
+					`${con.rate}%`,
+					`${con.met} of ${con.owed} ${unit} owed since ${item.createdAt}. Today is excluded — the day isn't over.`,
+					copyText(cd, "streaks.consistencyIcon")
+				);
+
+				// Trend only means something once there's a prior window to
+				// compare against, so it's omitted rather than faked at zero.
+				if (con.owed >= 40) {
+					const delta = con.recentRate - con.priorRate;
+					const arrow = delta > 2 ? "↑" : delta < -2 ? "↓" : "→";
+					const trendCls =
+						delta > 2 ? " habit-tracker-streaks-trend-up" : delta < -2 ? " habit-tracker-streaks-trend-down" : "";
+					const cell = statGrid.createDiv({ cls: "habit-tracker-streaks-stat" + trendCls });
+					cell.createDiv({ text: `${arrow} ${con.recentRate}%`, cls: "habit-tracker-streaks-stat-value" });
+					const trendLabel = cell.createDiv({ cls: "habit-tracker-streaks-stat-label" });
+					trendLabel.createSpan({ text: copyText(cd, "streaks.trendIcon"), cls: "habit-tracker-streaks-stat-icon" });
+					trendLabel.createSpan({ text: "last 30" });
+					cell.setAttr("title", `Last 30 ${unit}: ${con.recentRate}% vs ${con.priorRate}% the 30 before.`);
+				}
+
+				// --- past runs
+				const finished = runs.filter((r) => r.brokenOn).reverse().slice(0, 4);
+				if (finished.length > 0) {
+					const runsEl = row.createDiv({ cls: "habit-tracker-streaks-runs" });
+					runsEl.createSpan({ text: "past runs", cls: "habit-tracker-streaks-runs-label" });
+					for (const r of finished) {
+						const chip = runsEl.createSpan({ cls: "habit-tracker-streaks-run" });
+						chip.createSpan({ text: `${r.length}`, cls: "habit-tracker-streaks-run-len" });
+						chip.createSpan({ text: `${shortDate(r.start)} – ${shortDate(r.end)}`, cls: "habit-tracker-streaks-run-range" });
+						chip.setAttr("title", `${r.length} ${unit}, ${r.start} to ${r.end}. Broke on ${r.brokenOn}.`);
+					}
+				}
+			}
+
+			// --- rolling 365-day timeline
+			const tl = row.createDiv({ cls: "habit-tracker-streaks-timeline" });
+			const created = item.createdAt;
+			for (let i = 364; i >= 0; i--) {
+				const d = addDays(new Date(), -i);
+				const dateStr = formatDate(d);
+				const cell = tl.createDiv({ cls: "habit-tracker-tl-cell" });
+				if (dateStr < created) {
+					cell.addClass("habit-tracker-tl-pre");
+					continue;
+				}
+				const offDay = !isTask && !isDailyHabit(item) && !isScheduledOn(item, d);
+				if (entries[dateStr]) {
+					cell.addClass(offDay ? "habit-tracker-tl-repair" : "habit-tracker-tl-done");
+					if (entries[dateStr] === "min") cell.addClass("habit-tracker-tl-min");
+					cell.style.backgroundColor = item.color;
+				} else if (offDay) {
+					cell.addClass("habit-tracker-tl-off");
+				} else if (dateStr < todayStr() && !isTask) {
+					cell.addClass("habit-tracker-tl-missed");
+				}
+				cell.setAttr("title", `${dateStr}${entries[dateStr] ? " — done" : offDay ? " — not scheduled" : ""}`);
+			}
+
+			// Anchors under the rail. Without them the timeline is a bar of
+			// colour with no indication of which end is now — and for a
+			// young habit, no way to tell a short history from a broken
+			// layout.
+			const scale = row.createDiv({ cls: "habit-tracker-streaks-scale" });
+			scale.createSpan({ text: "1 year ago" });
+			scale.createSpan({ text: "today" });
+			// The start marker is positioned at the point on the rail where
+			// the habit actually begins, not centred — a centred label would
+			// claim every habit started six months ago. Suppressed near
+			// either end, where it would collide with the fixed anchors.
+			const daysOld = Math.round((Date.now() - new Date(created + "T00:00:00").getTime()) / 86400000);
+			if (daysOld <= 364) {
+				const pct = ((364 - daysOld) / 364) * 100;
+				if (pct > 14 && pct < 84) {
+					const marker = scale.createSpan({ text: `started ${shortDate(created)}`, cls: "habit-tracker-streaks-scale-start" });
+					marker.style.left = `${pct}%`;
+				}
+			}
+		}
+	}
+
 	renderHabit(parentEl: HTMLElement, habit: HabitDefinition) {
 		const entries = this.plugin.data.entries[habit.id] || (this.plugin.data.entries[habit.id] = {});
-		const stats = computeStats(entries);
+		const stats = computeStats(habit, entries);
 		const view = this.currentView;
 
 		const card = parentEl.createDiv({ cls: "habit-tracker-habit" });
@@ -3425,6 +4301,14 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			text: copyText(this.plugin.settings.designCopy, isBreak ? "card.break" : "card.build"),
 			cls: "habit-tracker-type-badge" + (isBreak ? " habit-tracker-type-badge-break" : " habit-tracker-type-badge-build"),
 		});
+		// Only shown when the habit isn't daily — otherwise it'd be seven
+		// redundant labels on every card.
+		if (habit.kind !== "task" && !isDailyHabit(habit)) {
+			titleRow.createSpan({
+				text: habitScheduledDays(habit).map((d) => WEEKDAY_SHORT[d]).join(" · "),
+				cls: "habit-tracker-schedule-badge",
+			});
+		}
 
 		// Primary row: only the two numbers that matter for a daily glance
 		// (current streak, lifetime votes). best/week/month/year are real
@@ -3436,6 +4320,20 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		streakPill.createSpan({ text: copyText(this.plugin.settings.designCopy, isBreak ? "stat.cleanIcon" : "stat.streakIcon"), cls: "habit-tracker-pill-icon" });
 		streakPill.createSpan({ text: `${stats.streak}`, cls: "habit-tracker-pill-value" });
 		streakPill.createSpan({ text: copyText(this.plugin.settings.designCopy, isBreak ? "stat.clean" : "stat.streak"), cls: "habit-tracker-pill-label" });
+		// The streak is being held rather than counted forward: a scheduled
+		// day was missed but an off-day repair is still possible. Say by
+		// when, since the whole point is that it's recoverable.
+		if (stats.atRisk && stats.repairBy) {
+			streakPill.addClass("habit-tracker-pill-streak-at-risk");
+			const by = new Date(stats.repairBy + "T00:00:00");
+			statsRow.createSpan({
+				text: copyText(this.plugin.settings.designCopy, "stat.repair").replace(
+					"{day}",
+					by.toLocaleString("default", { weekday: "long" })
+				),
+				cls: "habit-tracker-repair-hint",
+			});
+		}
 
 		const totalPill = statsRow.createDiv({ cls: "habit-tracker-pill habit-tracker-pill-votes" });
 		totalPill.createSpan({ text: `${stats.total}`, cls: "habit-tracker-pill-value" });
@@ -3488,6 +4386,10 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				initial: habit,
 				onSubmit: async (values) => {
 					habit.name = values.name;
+					// Not part of habitFieldsFromFormValues (which deliberately
+					// omits id/createdAt/kind), so it has to be assigned here
+					// or an edited start date would silently not stick.
+					if (values.createdAt) habit.createdAt = values.createdAt;
 					habit.color = values.color;
 					habit.type = values.type;
 					habit.kind = values.kind;
@@ -3501,6 +4403,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					habit.alarmTime = values.kind === "task" ? undefined : values.alarmTime;
 					habit.alarmRepeatMinutes = values.kind === "task" ? undefined : values.alarmRepeatMinutes;
 					habit.timeOfDay = values.kind === "task" ? undefined : (values.timeOfDay || undefined);
+					habit.scheduledDays =
+						values.kind === "task" || values.scheduledDays.length >= 7 ? undefined : [...values.scheduledDays].sort();
 					habit.stackedAfter = values.stackedAfter || undefined;
 					habit.craving = values.craving || undefined;
 					habit.minimumVersion = values.minimumVersion || undefined;
@@ -3512,6 +4416,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				},
 				onSplit: async (originalValues, copyValues) => {
 					Object.assign(habit, habitFieldsFromFormValues(originalValues));
+					if (originalValues.createdAt) habit.createdAt = originalValues.createdAt;
 					// The copy's `name` is unchanged from the original by
 					// design (only Time of Day differs) — the "-copy-" infix
 					// avoids colliding with an id minted from the same
@@ -3519,6 +4424,11 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 					const copyId = slugify(copyValues.name) + "-copy-" + Date.now();
 					const copyHabit: HabitDefinition = {
 						id: copyId,
+						// Deliberately today, NOT the original's start date:
+						// this half is split off an existing habit and gets a
+						// brand-new empty entry set below, so inheriting the
+						// original's history window would make it owe every
+						// day since then with nothing logged — opening at 0%.
 						createdAt: todayStr(),
 						kind: "habit",
 						...habitFieldsFromFormValues(copyValues),
@@ -3531,6 +4441,38 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				},
 			}).open();
 		};
+
+		// Archive (or, for an already-archived habit, Restore) sits between
+		// Edit and Delete — a reversible middle ground for a habit you're
+		// done with but don't want to lose history/streak on, one click
+		// short of the permanent, typed-confirm Delete beside it.
+		if (habit.archived) {
+			const restoreBtn = actionsRow.createSpan({
+				text: "↩️",
+				cls: "habit-tracker-restore-btn" + (this.reorderModeActive ? " habit-tracker-action-btn-disabled" : ""),
+			});
+			restoreBtn.setAttr("aria-label", "Restore habit");
+			restoreBtn.onclick = async () => {
+				if (this.reorderModeActive) return;
+				habit.archived = false;
+				await this.plugin.persist();
+				this.plugin.refreshAll();
+			};
+		} else {
+			const archiveBtn = actionsRow.createSpan({
+				text: "📦",
+				cls: "habit-tracker-archive-btn" + (this.reorderModeActive ? " habit-tracker-action-btn-disabled" : ""),
+			});
+			archiveBtn.setAttr("aria-label", "Archive habit");
+			archiveBtn.onclick = () => {
+				if (this.reorderModeActive) return;
+				new ConfirmArchiveModal(this.plugin, habitDisplayName(habit), async () => {
+					habit.archived = true;
+					await this.plugin.persist();
+					this.plugin.refreshAll();
+				}).open();
+			};
+		}
 
 		const deleteBtn = actionsRow.createSpan({
 			text: "🗑",
@@ -3654,7 +4596,9 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		const grid = card.createDiv({ cls: "habit-tracker-grid-wrap" });
 		grid.setAttr("data-habit-id", habit.id);
-		if (view === "week") {
+		if (view === "day") {
+			this.renderDayGrid(grid, habit, entries, this.selectedDayOffset);
+		} else if (view === "week") {
 			this.renderWeekGrid(grid, habit, entries, this.selectedWeekOffset);
 		} else if (view === "month") {
 			this.renderMonthGrid(grid, habit, entries, this.selectedMonthOffset);
@@ -3799,6 +4743,17 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		});
 	}
 
+	// Day view: one full-width check bar per habit instead of a grid.
+	// Deliberately not "a bigger square" — a lone cell leaves most of the
+	// card empty and reads as a cropped Week view, whereas a bar spanning
+	// the card reads as a checklist row and gives a large tap target on
+	// mobile, which is where a today-only view is most useful.
+	renderDayGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>, dayOffset: number = 0) {
+		const d = addDays(new Date(), dayOffset);
+		const gridEl = container.createDiv({ cls: "habit-tracker-day-grid" });
+		this.renderCell(gridEl, habit, entries, d, "day");
+	}
+
 	renderWeekGrid(container: HTMLElement, habit: HabitDefinition, entries: Record<string, EntryValue>, weekOffset: number = 0) {
 		const today = new Date();
 		const start = addDays(addDays(today, -today.getDay()), weekOffset * 7); // Sunday of the selected week
@@ -3867,21 +4822,60 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	) {
 		const today = new Date();
 		const dateStr = formatDate(d);
-		const boxed = style === "week" || style === "month";
+		// `day` counts as boxed so it inherits the whole week/month state
+		// vocabulary (-done / -missed / -future / -min) rather than needing a
+		// parallel set; habit-tracker-day-cell only overrides the shape.
+		const boxed = style === "week" || style === "month" || style === "day";
 		const cellBaseCls =
-			style === "week" || style === "month"
+			style === "day"
+				? "habit-tracker-week-cell habit-tracker-day-cell"
+				: style === "week" || style === "month"
 				? "habit-tracker-week-cell"
 				: style === "yeardays"
 				? "habit-tracker-yeardays-cell"
 				: "habit-tracker-cell";
 		const cell = gridEl.createDiv({ cls: cellBaseCls });
 		cell.setAttr("data-date", dateStr);
+
+		// Scheduling state. A daily habit has no off-days, so all three of
+		// these stay false and the cell behaves exactly as it always has.
+		const offDay = !isDailyHabit(habit) && !isScheduledOn(habit, d);
+		const isRepairEntry = offDay && !!entries[dateStr];
+		const repairUnlocked = offDay && !entries[dateStr] && isRepairUnlocked(habit, entries, d);
+		if (offDay) cell.addClass("habit-tracker-cell-offday");
+		if (repairUnlocked) cell.addClass("habit-tracker-cell-repairable");
+		if (isRepairEntry) cell.addClass("habit-tracker-cell-repair");
 		// aria-label is set once state is known, below — every style gets
 		// one (not just the unboxed year/year-days cells that lack a printed
 		// date), since a screen-reader user needs the same done/missed/today
 		// signal a sighted user reads off the cell's fill color.
 
-		if (style === "week") {
+		if (style === "day") {
+			const when = cell.createDiv({ cls: "habit-tracker-day-when" });
+			when.createSpan({ text: d.toLocaleString("default", { weekday: "long" }), cls: "habit-tracker-day-weekday" });
+			when.createSpan({ text: d.toLocaleString("default", { month: "short", day: "numeric" }), cls: "habit-tracker-day-date" });
+			// Order matters, and mirrors the aria stateWord built further
+			// down so the bar and the screen-reader label never disagree:
+			// an actual entry wins over everything, then repair states, then
+			// an ordinary off-day, then time. Without the off-day branches a
+			// Mon/Wed/Sat habit would read "Not yet — click to check off" on
+			// a Tuesday it was never due.
+			const v = entries[dateStr];
+			const statusId = v
+				? isRepairEntry
+					? "day.repairDone"
+					: v === "min"
+					? "day.minDone"
+					: "day.done"
+				: repairUnlocked
+				? "day.repairOpen"
+				: offDay
+				? "day.offDay"
+				: d > today
+				? "day.upcoming"
+				: "day.notDone";
+			cell.createDiv({ cls: "habit-tracker-day-status", text: copyText(this.plugin.settings.designCopy, statusId) });
+		} else if (style === "week") {
 			cell.createDiv({ text: d.toLocaleString("default", { weekday: "short" }), cls: "habit-tracker-week-day-label" });
 			cell.createDiv({ text: "" + d.getDate(), cls: "habit-tracker-week-date-label" });
 		} else if (style === "month") {
@@ -3904,17 +4898,18 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			if (entries[dateStr] === "min") {
 				cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
 			}
-		} else if (dateStr < todayStr()) {
+		} else if (dateStr < todayStr() && !offDay) {
 			// A day strictly before today with no entry — visibly greyed out
 			// so a gap in the streak reads at a glance, in every view (year,
 			// year-days, week, month all funnel through this one function).
 			// Today itself is excluded even before it's checked off, since a
-			// streak isn't broken until the day is actually over.
+			// streak isn't broken until the day is actually over. Off-days
+			// are excluded too: nothing was owed, so nothing was missed.
 			cell.addClass(missedCls);
 		}
 		if (dateStr === todayStr()) {
 			cell.addClass("habit-tracker-cell-today");
-			if (isStreakAtRisk(entries)) {
+			if (isStreakAtRisk(habit, entries)) {
 				cell.addClass("habit-tracker-cell-at-risk");
 			}
 		}
@@ -3925,9 +4920,15 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		// off the cell's fill color, which boxed week/month cells don't
 		// otherwise convey via their printed date+weekday text alone.
 		const stateWord = entries[dateStr]
-			? entries[dateStr] === "min"
+			? isRepairEntry
+				? "made up on an off day"
+				: entries[dateStr] === "min"
 				? "minimum version done"
 				: "done"
+			: repairUnlocked
+			? "off day, unlocked to make up a missed day"
+			: offDay
+			? "off day, not scheduled"
 			: d > today
 			? "upcoming"
 			: dateStr < todayStr()
@@ -3948,8 +4949,17 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			return;
 		}
 
+		// A locked off-day is inert: the habit isn't due, and no missed day
+		// has unlocked it for repair. An off-day that already holds a repair
+		// stays clickable so a mistaken one can be cleared.
+		if (offDay && !repairUnlocked && !entries[dateStr]) {
+			cell.setAttr("tabindex", "-1");
+			cell.setAttr("aria-disabled", "true");
+			return;
+		}
+
 		const toggle = async () => {
-			const oldStreak = computeStats(entries).streak;
+			const oldStreak = computeStats(habit, entries).streak;
 			const next = nextEntryValue(entries[dateStr]);
 			if (next === undefined) {
 				delete entries[dateStr];
@@ -3970,7 +4980,7 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			cell.addClass(doneCls);
 			if (next === "min") cell.addClass(boxed ? "habit-tracker-week-cell-min" : "habit-tracker-cell-min");
 			cell.addClass("habit-tracker-cell-pop");
-			const newStreak = computeStats(entries).streak;
+			const newStreak = computeStats(habit, entries).streak;
 			if (this.plugin.settings.celebrationEffectsEnabled) {
 				const card = cell.closest<HTMLElement>(".habit-tracker-habit");
 				if (card) burstConfetti(card, cell, habit.color);
@@ -4130,7 +5140,7 @@ export default class HabitTrackerPlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor("habit-tracker", (source, el, ctx) => {
 			const filterMatch = source.match(/^\s*habit:\s*(.+)\s*$/m);
 			const filterName = filterMatch ? filterMatch[1].trim() : null;
-			const viewMatch = source.match(/^\s*view:\s*(week|month|year|yeardays)\s*$/m);
+			const viewMatch = source.match(/^\s*view:\s*(day|week|month|year|yeardays)\s*$/m);
 			// Week is the default on every device unless the note explicitly
 			// requests a different view.
 			const defaultView: ViewMode = viewMatch ? (viewMatch[1] as ViewMode) : "week";
@@ -4210,6 +5220,10 @@ export default class HabitTrackerPlugin extends Plugin {
 			if (!habit.alarmEnabled || !habit.alarmTime) continue;
 			if (nowStr < habit.alarmTime) continue;
 			if (this.data.entries[habit.id]?.[today]) continue;
+			// Nothing is owed on an off-day, so don't nag — unless today is
+			// an open window to repair a missed scheduled day, which is
+			// exactly when a reminder is most useful.
+			if (!isScheduledOn(habit, now) && !isRepairUnlocked(habit, this.data.entries[habit.id] || {}, now)) continue;
 
 			const repeatMinutes = habit.alarmRepeatMinutes && habit.alarmRepeatMinutes > 0 ? habit.alarmRepeatMinutes : 10;
 			const lastFired = this.habitAlarmLastFiredAt.get(habit.id);
@@ -4463,7 +5477,12 @@ export default class HabitTrackerPlugin extends Plugin {
 	maybeCelebrateAllHabitsDoneToday() {
 		const today = todayStr();
 		if (this.lastAllHabitsCongratsDate === today) return;
-		const habits = this.data.habits.filter((h) => h.kind !== "task");
+		// Only habits actually scheduled for today count — a Mon/Wed/Sat
+		// habit shouldn't hold Tuesday's "all done" hostage.
+		const now = new Date();
+		const habits = this.data.habits.filter(
+			(h) => h.kind !== "task" && !h.archived && isScheduledOn(h, now)
+		);
 		if (habits.length === 0) return;
 		const allDone = habits.every((h) => !!this.data.entries[h.id]?.[today]);
 		if (!allDone) return;
