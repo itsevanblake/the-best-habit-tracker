@@ -125,6 +125,333 @@ interface PluginSettings {
 	// Kept separate from designTweaks because the two have different
 	// lifecycles — a token change repaints, a copy change re-renders.
 	designCopy: Record<string, string>;
+	// Garage — the credit economy and car collection. See GARAGE_CARS /
+	// GARAGE_CATEGORIES below. Synced like the rest of settings so a
+	// collection follows you across devices.
+	garage: GarageState;
+}
+
+// ---- Garage ----
+// Credits are a PERMANENT LEDGER, not a live recount of check-ins. That
+// distinction is the whole reason `earned` is stored rather than derived:
+// unchecking a habit removes the check-in but must never claw back a credit
+// you have already spent, or a balance could go negative and the shop would
+// have to explain a debt. So `earned` only ever increases, `spent` only ever
+// increases, and balance = earned - spent can never go below zero.
+//
+// On first run `earned` is seeded from the user's entire existing check-in
+// history (see seedGarageCredits), so a long-running tracker arrives with its
+// back-catalogue already banked instead of starting at zero.
+interface GarageState {
+	earned: number;
+	spent: number;
+	// Cars the user has paid the unlock price for.
+	unlocked: string[];
+	// carId -> categoryId -> highest tier PURCHASED (1-3). Buying a tier
+	// implies owning every tier below it, so this single number is the whole
+	// ownership record for a category.
+	owned: Record<string, Record<string, number>>;
+	// carId -> categoryId -> tier currently DISPLAYED (0 = stock). Always
+	// <= the owned tier. Kept separate from `owned` so re-equipping a lower
+	// tier is free and reversible — you paid to climb the ladder, so every
+	// rung you passed stays available to put back on.
+	equipped: Record<string, Record<string, number>>;
+	// Which car the garage opens on.
+	activeCar: string | null;
+	// Set once the initial history seed has run, so it never double-counts
+	// on a later load.
+	seeded: boolean;
+}
+
+const DEFAULT_GARAGE: GarageState = {
+	earned: 0,
+	spent: 0,
+	unlocked: [],
+	owned: {},
+	equipped: {},
+	activeCar: null,
+	seeded: false,
+};
+
+interface GarageCar {
+	id: string;
+	name: string;
+	brand: string;
+	price: number;
+	blurb: string;
+	// Side-profile geometry, authored against a 620x250 viewBox with the
+	// ground line at y=187. Each car gets its own body/glass outline so the
+	// three read as genuinely different machines rather than one silhouette
+	// recoloured. Proportions follow real mid-engine practice: short nose,
+	// cab-forward greenhouse, long rear deck over the engine.
+	body: string;
+	glass: string;
+	// Shoulder crease. A single highlight/shadow pair along this line is
+	// what makes a flat fill read as a curved panel.
+	belt: string;
+	// Mid-engine side scoop, the signature none of these cars is without.
+	intake: string;
+	rearAxle: number;
+	frontAxle: number;
+	wheelR: number;
+	paint: string;
+	paintMid: string;
+	paintDark: string;
+}
+
+const GARAGE_CARS: GarageCar[] = [
+	{
+		id: "mclaren",
+		name: "720S",
+		brand: "McLaren",
+		price: 150,
+		blurb: "Mid-engine, dihedral doors, obsessive aero.",
+		body:
+			"M36,168 C34,148 40,134 58,126 L120,110 C142,102 170,96 206,92 C244,76 292,68 338,70 C382,72 414,84 436,102 L470,118 C520,126 562,140 582,158 C590,166 592,174 590,181 C590,185 586,187 580,187 L522,187 A54,54 0 0 0 414,187 L206,187 A54,54 0 0 0 98,187 L48,187 C40,187 36,180 36,168 Z",
+		glass: "M268,94 C300,78 332,74 358,78 C384,84 406,96 424,112 L340,106 L290,100 Z",
+		belt: "M60,132 C140,116 240,108 336,112 C420,118 500,132 560,152",
+		intake: "M222,116 C250,110 270,118 278,132 L220,140 Z",
+		rearAxle: 152,
+		frontAxle: 468,
+		wheelR: 54,
+		paint: "#ffc07a",
+		paintMid: "#ff8c1a",
+		paintDark: "#6d3400",
+	},
+	{
+		id: "lamborghini",
+		name: "Huracán",
+		brand: "Lamborghini",
+		price: 500,
+		blurb: "Wedge geometry, naturally aspirated V10 howl.",
+		// Sharper, flatter wedge — the Lamborghini signature. Lower roof,
+		// straighter lines, more aggressive tail.
+		body:
+			"M32,170 C30,150 36,136 54,128 L118,108 C140,98 168,92 204,88 C242,72 290,64 336,66 C380,68 412,80 434,100 L472,118 C524,126 566,142 586,160 C592,168 594,176 592,182 C592,186 588,188 582,188 L522,188 A54,54 0 0 0 414,188 L206,188 A54,54 0 0 0 98,188 L44,188 C36,188 32,181 32,170 Z",
+		glass: "M266,90 C298,74 330,70 356,74 C382,80 404,92 422,110 L338,102 L288,96 Z",
+		belt: "M56,130 C138,112 238,104 334,108 C418,114 500,130 564,152",
+		intake: "M218,114 C248,106 270,114 280,130 L216,138 Z",
+		rearAxle: 152,
+		frontAxle: 468,
+		wheelR: 54,
+		paint: "#e8ff8a",
+		paintMid: "#c8f52a",
+		paintDark: "#4e6600",
+	},
+	{
+		id: "bugatti",
+		name: "Chiron",
+		brand: "Bugatti",
+		price: 1400,
+		blurb: "Quad-turbo W16. Engineering with no upper limit.",
+		// Wider, heavier, more rounded — a hyper-GT rather than a track car.
+		body:
+			"M38,166 C36,144 44,130 62,122 L124,108 C146,98 174,92 210,88 C248,70 296,62 342,64 C386,66 418,80 440,100 L474,116 C522,124 560,138 578,156 C586,164 588,172 586,180 C586,184 582,186 576,186 L522,186 A54,54 0 0 0 414,186 L206,186 A54,54 0 0 0 98,186 L50,186 C42,186 38,178 38,166 Z",
+		glass: "M272,92 C304,74 336,70 362,74 C388,80 410,94 428,112 L344,104 L294,98 Z",
+		belt: "M62,130 C142,112 242,104 338,108 C422,114 498,128 558,148",
+		intake: "M226,114 C254,108 274,116 282,130 L224,138 Z",
+		rearAxle: 152,
+		frontAxle: 468,
+		wheelR: 54,
+		paint: "#7db8ee",
+		paintMid: "#2f7fd6",
+		paintDark: "#0d2c52",
+	},
+];
+
+interface GarageTier {
+	name: string;
+	price: number;
+}
+
+interface GarageCategory {
+	id: string;
+	label: string;
+	// What this slot does, shown under the category name in the shop.
+	desc: string;
+	icon: string;
+	// Stock (free, always owned) plus three purchasable rungs.
+	stockName: string;
+	tiers: GarageTier[];
+}
+
+// Uniform ladder pricing across every category: 10 + 25 + 55 = 90 to max one
+// slot, x10 slots = 900 to fully build one car. Uniform on purpose — it keeps
+// the shop legible (you always know what the next rung costs) and means no
+// category is a trap that soaks credits for a small visual change.
+const TIER_PRICES = [10, 25, 55];
+
+const GARAGE_CATEGORIES: GarageCategory[] = [
+	{
+		id: "wheels",
+		label: "Wheels",
+		desc: "Lighter rotating mass, more aggressive face.",
+		icon: "◎",
+		stockName: "Stock Alloys",
+		tiers: [
+			{ name: "Forged Sport", price: 10 },
+			{ name: "Lightweight Forged", price: 25 },
+			{ name: "Track Forged Magnesium", price: 55 },
+		],
+	},
+	{
+		id: "paint",
+		label: "Paint / Wrap",
+		desc: "Factory colour through full competition livery.",
+		icon: "▧",
+		stockName: "Factory Paint",
+		tiers: [
+			{ name: "Gloss Respray", price: 10 },
+			{ name: "Satin Colour Wrap", price: 25 },
+			{ name: "Race Livery", price: 55 },
+		],
+	},
+	{
+		id: "tint",
+		label: "Window Tint",
+		desc: "Ceramic film. Lower number, darker glass.",
+		icon: "▤",
+		stockName: "Clear Glass",
+		tiers: [
+			{ name: "35% Ceramic", price: 10 },
+			{ name: "20% Ceramic", price: 25 },
+			{ name: "5% Limo", price: 55 },
+		],
+	},
+	{
+		id: "spoiler",
+		label: "Rear Wing",
+		desc: "Downforce over the rear axle at speed.",
+		icon: "▔",
+		stockName: "Stock Lip",
+		tiers: [
+			{ name: "Ducktail", price: 10 },
+			{ name: "Sport Wing", price: 25 },
+			{ name: "Swan-Neck GT Wing", price: 55 },
+		],
+	},
+	{
+		id: "exhaust",
+		label: "Exhaust Tips",
+		desc: "Straighter path out, harder note.",
+		icon: "◉",
+		stockName: "Stock Tips",
+		tiers: [
+			{ name: "Polished Dual", price: 10 },
+			{ name: "Sport Quad", price: 25 },
+			{ name: "Titanium Centre-Exit", price: 55 },
+		],
+	},
+	{
+		id: "underglow",
+		label: "Underglow",
+		desc: "Purely for the theatre of it.",
+		icon: "◡",
+		stockName: "Off",
+		tiers: [
+			{ name: "Subtle Accent", price: 10 },
+			{ name: "Full Neon", price: 25 },
+			{ name: "Pulsing Spectrum", price: 55 },
+		],
+	},
+	{
+		id: "calipers",
+		label: "Brake Calipers",
+		desc: "Bigger discs, more clamping force, less fade.",
+		icon: "◐",
+		stockName: "Cast Black",
+		tiers: [
+			{ name: "Painted Callipers", price: 10 },
+			{ name: "Big Brake Kit", price: 25 },
+			{ name: "Carbon-Ceramic", price: 55 },
+		],
+	},
+	{
+		id: "skirts",
+		label: "Side Skirts",
+		desc: "Seals airflow down the flank of the car.",
+		icon: "▬",
+		stockName: "Stock Sills",
+		tiers: [
+			{ name: "Aero Skirts", price: 10 },
+			{ name: "Extended Aero", price: 25 },
+			{ name: "Carbon Fibre", price: 55 },
+		],
+	},
+	{
+		id: "hood",
+		label: "Hood",
+		desc: "Vents the front radiators and cuts front lift.",
+		icon: "▭",
+		stockName: "Stock Hood",
+		tiers: [
+			{ name: "Vented Hood", price: 10 },
+			{ name: "Dual-Vent Hood", price: 25 },
+			{ name: "Carbon Vented", price: 55 },
+		],
+	},
+	{
+		id: "splitter",
+		label: "Front Splitter",
+		desc: "Balances the wing. Front-end bite on turn-in.",
+		icon: "◣",
+		stockName: "Stock Valance",
+		tiers: [
+			{ name: "Lip Splitter", price: 10 },
+			{ name: "Aero Splitter", price: 25 },
+			{ name: "Carbon Splitter", price: 55 },
+		],
+	},
+];
+
+// Lifetime rank, driven by credits EARNED rather than balance — so spending
+// on the car you're building never demotes you. Purely a pride marker.
+const GARAGE_RANKS: Array<{ at: number; name: string }> = [
+	{ at: 0, name: "Grease Monkey" },
+	{ at: 50, name: "Weekend Wrencher" },
+	{ at: 150, name: "Garage Regular" },
+	{ at: 300, name: "Novice Collector" },
+	{ at: 550, name: "Serious Collector" },
+	{ at: 900, name: "Car Connoisseur" },
+	{ at: 1400, name: "Elite Collector" },
+	{ at: 2200, name: "Master Builder" },
+	{ at: 3500, name: "Automotive Tycoon" },
+	{ at: 5500, name: "Legend of the Garage" },
+];
+
+function garageRank(earned: number): { name: string; index: number; next: number | null } {
+	let i = 0;
+	for (let k = 0; k < GARAGE_RANKS.length; k++) if (earned >= GARAGE_RANKS[k].at) i = k;
+	return {
+		name: GARAGE_RANKS[i].name,
+		index: i,
+		next: i + 1 < GARAGE_RANKS.length ? GARAGE_RANKS[i + 1].at : null,
+	};
+}
+
+function garageBalance(g: GarageState): number {
+	// Clamped at zero defensively: the ledger rules should make a negative
+	// impossible, but a hand-edited data.json shouldn't be able to render a
+	// debt into the shop.
+	return Math.max(0, g.earned - g.spent);
+}
+
+function ownedTier(g: GarageState, carId: string, catId: string): number {
+	return g.owned[carId]?.[catId] ?? 0;
+}
+
+function equippedTier(g: GarageState, carId: string, catId: string): number {
+	const eq = g.equipped[carId]?.[catId];
+	// Falls back to the owned tier so a freshly bought part is worn
+	// immediately rather than sitting in an inventory the user has to go
+	// find and put on.
+	return eq === undefined ? ownedTier(g, carId, catId) : Math.min(eq, ownedTier(g, carId, catId));
+}
+
+function garageCarProgress(g: GarageState, carId: string): { owned: number; total: number } {
+	let owned = 0;
+	for (const c of GARAGE_CATEGORIES) owned += ownedTier(g, carId, c.id);
+	return { owned, total: GARAGE_CATEGORIES.length * TIER_PRICES.length };
 }
 
 // ---- Design Tweaks ----
@@ -304,6 +631,8 @@ const COPY_SPEC: CopyDef[] = [
 	{ id: "streaks.completionsIcon", label: "Completions icon (Streaks)", group: COPY_GROUP_STATS, def: "✅" },
 	{ id: "streaks.consistencyIcon", label: "Consistency icon (Streaks)", group: COPY_GROUP_STATS, def: "🎯" },
 	{ id: "streaks.trendIcon", label: "Trend icon (Streaks)", group: COPY_GROUP_STATS, def: "📈" },
+	{ id: "streaks.votesTitle", label: "Total votes title (Streaks)", group: COPY_GROUP_STATS, def: "Total votes" },
+	{ id: "streaks.votesSentence", label: "Total votes sentence (Streaks)", group: COPY_GROUP_STATS, vars: ["n"], def: "I\u2019ve cast {n} votes towards becoming a better me.", help: "The Atomic Habits identity-vote framing, same idea as the per-habit \u201cvotes\u201d stat, totalled across every habit." },
 	{ id: "streaks.statusIcon", label: "Task status icon (Streaks)", group: COPY_GROUP_STATS, def: "✅" },
 	{ id: "streaks.scheduledIcon", label: "Task scheduled icon (Streaks)", group: COPY_GROUP_STATS, def: "📅" },
 
@@ -321,6 +650,8 @@ const COPY_SPEC: CopyDef[] = [
 	{ id: "tb.year", label: "Year tab", group: COPY_GROUP_TOOLBAR, def: "Year" },
 	{ id: "tb.yeardays", label: "Year-Days tab", group: COPY_GROUP_TOOLBAR, def: "Year - Days" },
 	{ id: "tb.streaks", label: "Streaks tab", group: COPY_GROUP_TOOLBAR, def: "Streaks", help: "Opens the in-depth streak breakdown for every habit and task." },
+	{ id: "tb.garage", label: "Garage tab", group: COPY_GROUP_TOOLBAR, def: "🏁 Garage", help: "Opens the car collection you spend credits in." },
+	{ id: "gar.credit", label: "Credit toast", group: COPY_GROUP_TOOLBAR, def: "🔑 +1 credit", help: "Flashes when you check something off." },
 	{ id: "tb.today", label: "Today button", group: COPY_GROUP_TOOLBAR, def: "Today" },
 	{ id: "tb.reorder", label: "Reorder button", group: COPY_GROUP_TOOLBAR, def: "⠿ Reorder" },
 	{ id: "tb.walkthrough", label: "Walkthrough button", group: COPY_GROUP_TOOLBAR, def: "🎓 Creation Walkthrough" },
@@ -474,6 +805,7 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	anthropicModel: "claude-haiku-4-5-20251001",
 	designTweaks: {},
 	designCopy: {},
+	garage: DEFAULT_GARAGE,
 };
 
 // A cohesive, vibrant set (consistent saturation/lightness rather than a
@@ -3440,7 +3772,7 @@ class HabitTrackerSettingTab extends PluginSettingTab {
 	}
 }
 
-type ViewMode = "day" | "week" | "month" | "year" | "yeardays" | "streaks";
+type ViewMode = "day" | "week" | "month" | "year" | "yeardays" | "streaks" | "garage";
 type CellStyle = "year" | "week" | "month" | "yeardays" | "day";
 
 class HabitTrackerBlock extends MarkdownRenderChild {
@@ -3560,8 +3892,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			walkthroughBtn.onclick = () => this.showAddHabitIntro();
 		}
 		const toggle = leftGroup.createDiv({ cls: "habit-tracker-view-toggle" });
-		const modeLabels: Record<ViewMode, string> = { day: copyText(this.plugin.settings.designCopy, "tb.day"), week: copyText(this.plugin.settings.designCopy, "tb.week"), month: copyText(this.plugin.settings.designCopy, "tb.month"), year: copyText(this.plugin.settings.designCopy, "tb.year"), yeardays: copyText(this.plugin.settings.designCopy, "tb.yeardays"), streaks: copyText(this.plugin.settings.designCopy, "tb.streaks") };
-		(["day", "week", "month", "year", "yeardays", "streaks"] as ViewMode[]).forEach((mode, modeIndex) => {
+		const modeLabels: Record<ViewMode, string> = { day: copyText(this.plugin.settings.designCopy, "tb.day"), week: copyText(this.plugin.settings.designCopy, "tb.week"), month: copyText(this.plugin.settings.designCopy, "tb.month"), year: copyText(this.plugin.settings.designCopy, "tb.year"), yeardays: copyText(this.plugin.settings.designCopy, "tb.yeardays"), streaks: copyText(this.plugin.settings.designCopy, "tb.streaks"), garage: copyText(this.plugin.settings.designCopy, "tb.garage") };
+		(["day", "week", "month", "year", "yeardays", "streaks", "garage"] as ViewMode[]).forEach((mode, modeIndex) => {
 			const b = toggle.createEl("button", {
 				text: modeLabels[mode],
 				cls: "habit-tracker-view-btn" + (this.currentView === mode ? " habit-tracker-view-btn-active" : ""),
@@ -3758,6 +4090,11 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		if (this.currentView === "streaks") {
 			this.renderStreaksPage(el, allItems.filter((h) => !h.archived));
+			return;
+		}
+
+		if (this.currentView === "garage") {
+			this.renderGaragePage(el);
 			return;
 		}
 
@@ -4032,8 +4369,13 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 		checkbox.setAttr("aria-label", `Mark "${task.name}" done`);
 		checkbox.onchange = async () => {
 			if (checkbox.checked) {
+				const wasEmpty = !entries[date];
 				entries[date] = true;
 				task.archived = true;
+				if (wasEmpty) {
+					this.plugin.settings.garage.earned += 1;
+					this.plugin.flashCredit();
+				}
 			} else {
 				delete entries[date];
 				task.archived = false;
@@ -4123,6 +4465,384 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 	// order, each with its records, its consistency, and a rolling-365-day
 	// timeline. Read-only by design — this is where you go to understand the
 	// history, not to change it, so no cell here is clickable.
+	// ---- Garage ----
+	// The car is a layered SVG rather than an image: every upgrade is a layer
+	// that swaps or restyles, so a purchase changes the render immediately
+	// with no assets to ship. Shaded the way a product render is — a bright
+	// horizon band across the paint, a hard shoulder crease, a dark rocker
+	// reflecting the ground — because that layering, not the outline, is what
+	// makes a flat fill read as curved metal.
+	private carSvg(car: GarageCar, g: GarageState, opts: { locked?: boolean } = {}): string {
+		const t = (cat: string) => equippedTier(g, car.id, cat);
+		const locked = !!opts.locked;
+		const uid = `${car.id}${locked ? "-lk" : ""}`;
+		const GROUND = 187;
+
+		const paintTier = t("paint");
+		// Livery paints the car white-silver; satin deliberately kills the
+		// specular sweep, which is exactly what a satin wrap does to
+		// reflections.
+		const pL = paintTier >= 3 ? "#f4f6f9" : car.paint;
+		const pM = paintTier >= 3 ? "#c9ced6" : car.paintMid;
+		const pD = paintTier >= 3 ? "#5f6670" : car.paintDark;
+		const sheen = paintTier === 2 ? 0.1 : paintTier === 1 ? 0.42 : 0.3;
+
+		const tintTier = t("tint");
+		const glassTop = [0.72, 0.82, 0.9, 0.97][tintTier];
+		const glassBot = [0.4, 0.55, 0.72, 0.92][tintTier];
+
+		const wheelTier = t("wheels");
+		const caliperTier = t("calipers");
+		const glowTier = t("underglow");
+		const spoilerTier = t("spoiler");
+		const exhaustTier = t("exhaust");
+		const skirtTier = t("skirts");
+		const hoodTier = t("hood");
+		const splitTier = t("splitter");
+
+		const spokeCount = [5, 5, 7, 10][wheelTier];
+		const spokeW = [7, 6, 4.6, 3.2][wheelTier];
+		const spokeColor = ["#8d9098", "#c9ccd4", "#dfe3ea", "#26282f"][wheelTier];
+		const caliperColor = ["#3a3a42", "#e0362c", "#f0a020", "#efe9dd"][caliperTier];
+		const R = car.wheelR;
+
+		const wheel = (cx: number) => {
+			let sp = "";
+			for (let i = 0; i < spokeCount; i++) {
+				const a = (i / spokeCount) * Math.PI * 2 - Math.PI / 2;
+				sp += `<line x1="${cx}" y1="${GROUND}" x2="${(cx + (R - 14) * Math.cos(a)).toFixed(1)}" y2="${(GROUND + (R - 14) * Math.sin(a)).toFixed(1)}" stroke="${spokeColor}" stroke-width="${spokeW}" stroke-linecap="round"/>`;
+			}
+			return `<g>
+				<circle cx="${cx}" cy="${GROUND}" r="${R}" fill="#0d0b14"/>
+				<circle cx="${cx}" cy="${GROUND}" r="${R - 11}" fill="url(#rim${uid})"/>
+				${caliperTier > 0 ? `<path d="M${cx - (R - 22)},${GROUND - (R - 20)} a${R - 20},${R - 20} 0 0 1 0,${(R - 20) * 2}" fill="none" stroke="${caliperColor}" stroke-width="${caliperTier >= 2 ? 7 : 5}" stroke-linecap="round"/>` : ""}
+				${sp}
+				<circle cx="${cx}" cy="${GROUND}" r="7" fill="${wheelTier >= 3 ? "#c9ccd4" : "#e8eaee"}"/>
+			</g>`;
+		};
+
+		const glowColor = glowTier >= 3 ? "#ff3ea5" : glowTier === 2 ? "#22d3ee" : "#a855f7";
+
+		return `
+<svg viewBox="0 0 620 250" class="habit-tracker-car-svg" role="img" aria-label="${car.brand} ${car.name}">
+	<defs>
+		<linearGradient id="body${uid}" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0%" stop-color="${pL}"/>
+			<stop offset="30%" stop-color="${pM}"/>
+			<stop offset="52%" stop-color="${pM}"/>
+			<stop offset="53%" stop-color="${pD}" stop-opacity="0.82"/>
+			<stop offset="100%" stop-color="${pD}"/>
+		</linearGradient>
+		<linearGradient id="sheen${uid}" x1="0" y1="0" x2="1" y2="0">
+			<stop offset="14%" stop-color="#fff" stop-opacity="0"/>
+			<stop offset="40%" stop-color="#fff" stop-opacity="${sheen}"/>
+			<stop offset="64%" stop-color="#fff" stop-opacity="0"/>
+		</linearGradient>
+		<linearGradient id="glass${uid}" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0%" stop-color="#081524" stop-opacity="${glassTop}"/>
+			<stop offset="100%" stop-color="#3a6f9e" stop-opacity="${glassBot}"/>
+		</linearGradient>
+		<radialGradient id="rim${uid}" cx="0.4" cy="0.34" r="0.78">
+			<stop offset="0%" stop-color="#f4f6fa"/>
+			<stop offset="55%" stop-color="#9aa0ad"/>
+			<stop offset="100%" stop-color="#41444e"/>
+		</radialGradient>
+		<radialGradient id="shadow${uid}" cx="0.5" cy="0.5" r="0.5">
+			<stop offset="0%" stop-color="#000" stop-opacity="0.62"/>
+			<stop offset="100%" stop-color="#000" stop-opacity="0"/>
+		</radialGradient>
+		<clipPath id="clip${uid}"><path d="${car.body}"/></clipPath>
+		<linearGradient id="glow${uid}" x1="0" y1="0" x2="1" y2="0">
+			<stop offset="0%" stop-color="${glowColor}" stop-opacity="0"/>
+			<stop offset="50%" stop-color="${glowColor}" stop-opacity="0.9"/>
+			<stop offset="100%" stop-color="${glowColor}" stop-opacity="0"/>
+		</linearGradient>
+	</defs>
+
+	<ellipse cx="310" cy="216" rx="250" ry="13" fill="url(#shadow${uid})"/>
+	${glowTier > 0 ? `<ellipse cx="310" cy="206" rx="${186 + glowTier * 20}" ry="${6 + glowTier * 2}" fill="url(#glow${uid})" class="habit-tracker-car-glow${glowTier >= 3 ? " habit-tracker-car-glow-pulse" : ""}"/>` : ""}
+
+	${wheel(car.rearAxle)}
+	${wheel(car.frontAxle)}
+
+	<path d="${car.body}" fill="url(#body${uid})" stroke="#000" stroke-width="1.4" stroke-opacity="0.45"/>
+
+	<g clip-path="url(#clip${uid})">
+		${skirtTier > 0
+			? `<path d="M60,${GROUND - 20} C220,${GROUND - 10} 400,${GROUND - 10} 566,${GROUND - 20} L566,${GROUND - 6 + skirtTier} C400,${GROUND + skirtTier} 220,${GROUND + skirtTier} 60,${GROUND - 6 + skirtTier} Z" fill="${skirtTier >= 3 ? "#14141a" : "#000"}" opacity="${skirtTier >= 3 ? 0.95 : 0.45}"/>`
+			: `<path d="M60,${GROUND - 18} C220,${GROUND - 8} 400,${GROUND - 8} 566,${GROUND - 18} L566,${GROUND} C400,${GROUND} 220,${GROUND} 60,${GROUND} Z" fill="#000" opacity="0.3"/>`}
+	</g>
+
+	<path d="${car.glass}" fill="url(#glass${uid})"/>
+	<path d="${car.intake}" fill="#0d0910" opacity="0.92"/>
+
+	${hoodTier > 0 ? `<g opacity="0.72">${Array.from({ length: hoodTier >= 2 ? 2 : 1 }, (_, i) => `<rect x="${492 + i * 26}" y="${132 + i * 3}" width="20" height="4" rx="2" fill="${hoodTier >= 3 ? "#111" : "#000"}"/>`).join("")}</g>` : ""}
+	${splitTier > 0 ? `<path d="M566,${GROUND - 4} l${14 + splitTier * 7},${splitTier >= 3 ? 2 : 0} l0,6 l-${14 + splitTier * 7},0 Z" fill="${splitTier >= 3 ? "#14141a" : pD}" stroke="#000" stroke-opacity="0.5"/>` : ""}
+
+	${spoilerTier === 1 ? `<path d="M44,128 C68,116 96,110 122,108 l3,9 C99,119 72,125 48,136 Z" fill="${pD}"/>` : ""}
+	${spoilerTier === 2 ? `<g><rect x="36" y="104" width="86" height="8" rx="4" fill="#1c1c24"/><rect x="46" y="112" width="8" height="18" fill="#1c1c24"/><rect x="102" y="110" width="8" height="16" fill="#1c1c24"/></g>` : ""}
+	${spoilerTier >= 3 ? `<g><rect x="28" y="86" width="104" height="9" rx="4.5" fill="#141419"/><rect x="28" y="86" width="104" height="3" rx="1.5" fill="#43434f"/><path d="M44,95 l7,32 l9,0 l-6,-32 Z" fill="#141419"/><path d="M108,95 l7,32 l9,0 l-6,-32 Z" fill="#141419"/></g>` : ""}
+	${exhaustTier > 0 ? `<g>${Array.from({ length: exhaustTier === 2 ? 2 : 1 }, (_, i) => `<rect x="${40 + i * 16}" y="${GROUND - 22}" width="14" height="10" rx="5" fill="${exhaustTier >= 3 ? "#7f8590" : "#c8ccd4"}" stroke="#000" stroke-opacity="0.5"/>`).join("")}</g>` : ""}
+
+	<path d="${car.belt}" fill="none" stroke="#fff" stroke-opacity="0.32" stroke-width="2"/>
+	<path d="${car.belt}" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="1.4" transform="translate(0,2.6)"/>
+	<path d="${car.body}" fill="url(#sheen${uid})" class="habit-tracker-car-spec"/>
+
+	${locked ? `<rect x="0" y="0" width="620" height="250" fill="#0a0713" opacity="0.5"/>` : ""}
+</svg>`;
+	}
+
+	renderGaragePage(el: HTMLElement) {
+		const g = this.plugin.settings.garage;
+		const page = el.createDiv({ cls: "habit-tracker-garage" });
+		const balance = garageBalance(g);
+		const rank = garageRank(g.earned);
+
+		// --- header: balance + lifetime rank
+		const header = page.createDiv({ cls: "habit-tracker-garage-header" });
+		const bal = header.createDiv({ cls: "habit-tracker-garage-balance" });
+		bal.createSpan({ text: "🔑", cls: "habit-tracker-garage-key" });
+		bal.createSpan({ text: `${balance}`, cls: "habit-tracker-garage-balance-value" });
+		bal.createSpan({ text: balance === 1 ? "credit" : "credits", cls: "habit-tracker-garage-balance-label" });
+
+		const rankWrap = header.createDiv({ cls: "habit-tracker-garage-rank" });
+		rankWrap.createDiv({ text: `🏆 ${rank.name}`, cls: "habit-tracker-garage-rank-name" });
+		if (rank.next !== null) {
+			const prev = GARAGE_RANKS[rank.index].at;
+			const pct = Math.max(0, Math.min(100, ((g.earned - prev) / (rank.next - prev)) * 100));
+			const track = rankWrap.createDiv({ cls: "habit-tracker-garage-rank-track" });
+			track.createDiv({ cls: "habit-tracker-garage-rank-fill" }).style.setProperty("--fill", `${pct / 100}`);
+			rankWrap.createDiv({
+				text: `${g.earned} / ${rank.next} lifetime · next: ${GARAGE_RANKS[rank.index + 1].name}`,
+				cls: "habit-tracker-garage-rank-meta",
+			});
+		} else {
+			rankWrap.createDiv({ text: `${g.earned} lifetime credits · max rank`, cls: "habit-tracker-garage-rank-meta" });
+		}
+
+		// --- car selector
+		const activeId = g.activeCar && GARAGE_CARS.some((c) => c.id === g.activeCar) ? g.activeCar : GARAGE_CARS[0].id;
+		const tabs = page.createDiv({ cls: "habit-tracker-garage-cars" });
+		GARAGE_CARS.forEach((car) => {
+			const unlocked = g.unlocked.includes(car.id);
+			const tab = tabs.createDiv({
+				cls:
+					"habit-tracker-garage-cartab" +
+					(car.id === activeId ? " habit-tracker-garage-cartab-active" : "") +
+					(unlocked ? "" : " habit-tracker-garage-cartab-locked"),
+			});
+			tab.setAttr("tabindex", "0");
+			tab.setAttr("role", "button");
+			tab.createSpan({ text: unlocked ? "" : "🔒", cls: "habit-tracker-garage-cartab-lock" });
+			tab.createSpan({ text: car.brand, cls: "habit-tracker-garage-cartab-brand" });
+			tab.createSpan({ text: car.name, cls: "habit-tracker-garage-cartab-name" });
+			if (!unlocked) tab.createSpan({ text: `${car.price}`, cls: "habit-tracker-garage-cartab-price" });
+			const pick = () => {
+				g.activeCar = car.id;
+				this.plugin.persist();
+				this.render();
+			};
+			tab.onclick = pick;
+			tab.addEventListener("keydown", (e: KeyboardEvent) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					pick();
+				}
+			});
+		});
+
+		const car = GARAGE_CARS.find((c) => c.id === activeId) as GarageCar;
+		const unlocked = g.unlocked.includes(car.id);
+
+		// --- the car itself
+		const stage = page.createDiv({ cls: "habit-tracker-garage-stage" + (unlocked ? "" : " habit-tracker-garage-stage-locked") });
+		stage.innerHTML = this.carSvg(car, g, { locked: !unlocked });
+
+		const plate = page.createDiv({ cls: "habit-tracker-garage-plate" });
+		plate.createDiv({ text: `${car.brand} ${car.name}`, cls: "habit-tracker-garage-plate-name" });
+		plate.createDiv({ text: car.blurb, cls: "habit-tracker-garage-plate-blurb" });
+
+		if (!unlocked) {
+			// Locked: the whole shop is replaced by a single unlock action,
+			// with a progress bar so an unaffordable car still shows exactly
+			// how far off it is rather than just refusing.
+			const lock = page.createDiv({ cls: "habit-tracker-garage-lock" });
+			const pct = Math.max(0, Math.min(100, (balance / car.price) * 100));
+			const track = lock.createDiv({ cls: "habit-tracker-garage-lock-track" });
+			track.createDiv({ cls: "habit-tracker-garage-lock-fill" }).style.setProperty("--fill", `${pct / 100}`);
+			lock.createDiv({ text: `${balance} / ${car.price} credits`, cls: "habit-tracker-garage-lock-meta" });
+			const btn = lock.createEl("button", {
+				cls: "habit-tracker-garage-buy habit-tracker-garage-buy-big",
+				text: balance >= car.price ? `Unlock the ${car.brand} — ${car.price} credits` : `${car.price - balance} more credits to unlock`,
+			});
+			btn.disabled = balance < car.price;
+			btn.onclick = async () => {
+				if (!this.plugin.garageSpend(car.price)) return;
+				g.unlocked.push(car.id);
+				g.activeCar = car.id;
+				await this.plugin.persist();
+				new Notice(`🏁 ${car.brand} ${car.name} unlocked. Time to build it.`);
+				this.plugin.refreshAll();
+			};
+			return;
+		}
+
+		// --- build progress
+		const prog = garageCarProgress(g, car.id);
+		const progWrap = page.createDiv({ cls: "habit-tracker-garage-progress" });
+		progWrap.createSpan({ text: `Build ${Math.round((prog.owned / prog.total) * 100)}% complete`, cls: "habit-tracker-garage-progress-label" });
+		const ptrack = progWrap.createDiv({ cls: "habit-tracker-garage-progress-track" });
+		ptrack.createDiv({ cls: "habit-tracker-garage-progress-fill" }).style.setProperty("--fill", `${prog.owned / prog.total}`);
+
+		// --- shop
+		const shop = page.createDiv({ cls: "habit-tracker-garage-shop" });
+		GARAGE_CATEGORIES.forEach((cat) => {
+			const own = ownedTier(g, car.id, cat.id);
+			const eq = equippedTier(g, car.id, cat.id);
+			const row = shop.createDiv({ cls: "habit-tracker-garage-slot" });
+
+			const head = row.createDiv({ cls: "habit-tracker-garage-slot-head" });
+			head.createSpan({ text: cat.icon, cls: "habit-tracker-garage-slot-icon" });
+			const headText = head.createDiv({ cls: "habit-tracker-garage-slot-headtext" });
+			headText.createDiv({ text: cat.label, cls: "habit-tracker-garage-slot-label" });
+			headText.createDiv({ text: cat.desc, cls: "habit-tracker-garage-slot-desc" });
+
+			const rungs = row.createDiv({ cls: "habit-tracker-garage-rungs" });
+			// Stock is always owned and always re-equippable, so it renders
+			// as a rung like any other rather than an implicit empty state.
+			for (let tier = 0; tier <= TIER_PRICES.length; tier++) {
+				const isStock = tier === 0;
+				const price = isStock ? 0 : cat.tiers[tier - 1].price;
+				const name = isStock ? cat.stockName : cat.tiers[tier - 1].name;
+				const isOwned = tier <= own;
+				const isEquipped = tier === eq;
+				// Ladder rule: you can only buy the next rung up, never skip.
+				const isNext = tier === own + 1;
+				const affordable = balance >= price;
+
+				const chip = rungs.createDiv({
+					cls:
+						"habit-tracker-garage-rung" +
+						(isEquipped ? " habit-tracker-garage-rung-on" : "") +
+						(isOwned ? " habit-tracker-garage-rung-owned" : "") +
+						(!isOwned && !isNext ? " habit-tracker-garage-rung-far" : ""),
+				});
+				chip.createSpan({ text: name, cls: "habit-tracker-garage-rung-name" });
+
+				if (isOwned) {
+					chip.createSpan({
+						text: isEquipped ? "Equipped" : "Equip",
+						cls: "habit-tracker-garage-rung-tag",
+					});
+					if (!isEquipped) {
+						chip.setAttr("tabindex", "0");
+						chip.setAttr("role", "button");
+						// Free, unlimited re-equip: you paid to climb the
+						// ladder, so every rung you passed stays yours to
+						// put back on — including stock.
+						const equip = async () => {
+							if (!g.equipped[car.id]) g.equipped[car.id] = {};
+							g.equipped[car.id][cat.id] = tier;
+							await this.plugin.persist();
+							this.plugin.refreshAll();
+						};
+						chip.onclick = equip;
+						chip.addEventListener("keydown", (e: KeyboardEvent) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								equip();
+							}
+						});
+					}
+				} else {
+					chip.createSpan({ text: `${price}`, cls: "habit-tracker-garage-rung-price" });
+					if (isNext) {
+						const buy = chip.createEl("button", { cls: "habit-tracker-garage-buy", text: affordable ? "Buy" : "Locked" });
+						buy.disabled = !affordable;
+						buy.onclick = async (e) => {
+							e.stopPropagation();
+							if (!this.plugin.garageSpend(price)) return;
+							if (!g.owned[car.id]) g.owned[car.id] = {};
+							g.owned[car.id][cat.id] = tier;
+							if (!g.equipped[car.id]) g.equipped[car.id] = {};
+							g.equipped[car.id][cat.id] = tier;
+							await this.plugin.persist();
+							new Notice(`Installed: ${name}`);
+							this.plugin.refreshAll();
+						};
+					}
+				}
+			}
+		});
+	}
+
+	// A whole-vault leaderboard sitting above the per-item breakdown: total
+	// votes cast across every real habit (tasks excluded — a one-off has no
+	// repetition to rank), a proportional bar showing each habit's share of
+	// that total, and the same habits ranked strongest-first below it. Reads
+	// entirely off computeStats() — nothing new persisted, same as the rest
+	// of this page.
+	renderVotesSummary(page: HTMLElement, habits: HabitDefinition[]) {
+		const ranked = habits
+			.map((h) => ({ habit: h, total: computeStats(h, this.plugin.data.entries[h.id] || {}).total }))
+			.filter((r) => r.total > 0)
+			.sort((a, b) => b.total - a.total);
+		const grandTotal = ranked.reduce((sum, r) => sum + r.total, 0);
+		if (ranked.length === 0) return;
+
+		const card = page.createDiv({ cls: "habit-tracker-votes-summary" });
+		const head = card.createDiv({ cls: "habit-tracker-votes-head" });
+		head.createDiv({ text: copyText(this.plugin.settings.designCopy, "streaks.votesTitle"), cls: "habit-tracker-votes-title" });
+		card.createDiv({ text: `${grandTotal}`, cls: "habit-tracker-votes-number" });
+		const sentence = copyText(this.plugin.settings.designCopy, "streaks.votesSentence").replace("{n}", `${grandTotal}`);
+		// The count inside the sentence gets its own underline, matching the
+		// reference this card is modelled on — built as two text nodes around
+		// a <span> rather than innerHTML, so nothing here can inject markup.
+		const sentenceEl = card.createDiv({ cls: "habit-tracker-votes-sentence" });
+		const marker = `${grandTotal} ${copyText(this.plugin.settings.designCopy, "stat.votes")}`;
+		const idx = sentence.indexOf(marker);
+		if (idx === -1) {
+			sentenceEl.setText(sentence);
+		} else {
+			sentenceEl.appendText(sentence.slice(0, idx));
+			sentenceEl.createSpan({ text: marker, cls: "habit-tracker-votes-sentence-mark" });
+			sentenceEl.appendText(sentence.slice(idx + marker.length));
+		}
+
+		const bar = card.createDiv({ cls: "habit-tracker-votes-bar" });
+		const segments: { el: HTMLElement; count: number }[] = [];
+		for (const { habit, total } of ranked) {
+			const seg = bar.createDiv({ cls: "habit-tracker-votes-bar-seg" });
+			seg.style.backgroundColor = habit.color;
+			seg.style.flexGrow = `${total}`;
+			seg.setAttr("title", `${habitDisplayName(habit)}: ${total}`);
+			seg.createSpan({ text: `${total}`, cls: "habit-tracker-votes-bar-seg-label" });
+			segments.push({ el: seg, count: total });
+		}
+		// A segment thin enough that its own number wouldn't fit just clips or
+		// overlaps its neighbour, so it's better hidden — but that can only be
+		// judged after layout has actually happened, not from the count alone
+		// (a "9" and a "9999" need different minimum widths). Checked next
+		// frame, once the browser has laid the bar out for real.
+		window.requestAnimationFrame(() => {
+			for (const { el } of segments) {
+				const label = el.querySelector<HTMLElement>(".habit-tracker-votes-bar-seg-label");
+				if (label && (el.clientWidth < label.scrollWidth + 6 || el.clientWidth < 22)) {
+					label.addClass("habit-tracker-votes-bar-seg-label-hidden");
+				}
+			}
+		});
+
+		const list = card.createDiv({ cls: "habit-tracker-votes-list" });
+		for (const { habit, total } of ranked) {
+			const row = list.createDiv({ cls: "habit-tracker-votes-list-row" });
+			const dot = row.createSpan({ cls: "habit-tracker-votes-list-dot" });
+			dot.style.backgroundColor = habit.color;
+			row.createSpan({ text: habitDisplayName(habit), cls: "habit-tracker-votes-list-name" });
+			row.createSpan({ text: `${total}`, cls: "habit-tracker-votes-list-count" });
+		}
+	}
+
 	renderStreaksPage(el: HTMLElement, items: HabitDefinition[]) {
 		const page = el.createDiv({ cls: "habit-tracker-streaks" });
 
@@ -4132,6 +4852,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 			empty.createDiv({ text: "Nothing to break down yet", cls: "habit-tracker-empty-title" });
 			return;
 		}
+
+		this.renderVotesSummary(page, items.filter((h) => h.kind !== "task"));
 
 		for (const item of items) {
 			const entries = this.plugin.data.entries[item.id] || {};
@@ -4960,11 +5682,20 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		const toggle = async () => {
 			const oldStreak = computeStats(habit, entries).streak;
+			const wasEmpty = !entries[dateStr];
 			const next = nextEntryValue(entries[dateStr]);
 			if (next === undefined) {
 				delete entries[dateStr];
 			} else {
 				entries[dateStr] = next;
+			}
+			// One credit per day newly filled in. Cycling an existing entry
+			// (full -> minimum) doesn't re-mint, and clearing one doesn't
+			// claw back — see the GarageState doc comment for why the ledger
+			// only ever counts up.
+			if (wasEmpty && next !== undefined) {
+				this.plugin.settings.garage.earned += 1;
+				this.plugin.flashCredit();
 			}
 			await this.plugin.persist();
 			if (!next) {
@@ -5112,6 +5843,21 @@ export default class HabitTrackerPlugin extends Plugin {
 			Array.isArray(saved?.settings?.milestones) && saved.settings.milestones.length > 0
 				? [...saved.settings.milestones]
 				: [...DEFAULT_MILESTONES];
+		// Garage: deep-merge rather than Object.assign's shallow copy, so a
+		// data.json written before this feature existed (or one missing a
+		// sub-key) still lands with every field present. Sharing
+		// DEFAULT_GARAGE by reference would let one vault's purchases leak
+		// into the module-level constant, so each nested object is rebuilt.
+		const savedGarage = saved?.settings?.garage as Partial<GarageState> | undefined;
+		this.settings.garage = {
+			earned: typeof savedGarage?.earned === "number" ? savedGarage.earned : 0,
+			spent: typeof savedGarage?.spent === "number" ? savedGarage.spent : 0,
+			unlocked: Array.isArray(savedGarage?.unlocked) ? [...savedGarage.unlocked] : [],
+			owned: savedGarage?.owned ? JSON.parse(JSON.stringify(savedGarage.owned)) : {},
+			equipped: savedGarage?.equipped ? JSON.parse(JSON.stringify(savedGarage.equipped)) : {},
+			activeCar: savedGarage?.activeCar ?? null,
+			seeded: !!savedGarage?.seeded,
+		};
 		// Defensive migration, same spirit as milestones above: guard
 		// against a corrupt/hand-edited data.json rather than letting it
 		// silently break checkAlarm()'s comparisons.
@@ -5123,6 +5869,9 @@ export default class HabitTrackerPlugin extends Plugin {
 			hasCreatedFirstHabit: saved?.hasCreatedFirstHabit ?? DEFAULT_DATA.hasCreatedFirstHabit,
 		};
 
+		// After data load, before anything renders: banks the existing
+		// check-in history the first time the garage ever runs.
+		this.seedGarageCredits();
 		this.addSettingTab(new HabitTrackerSettingTab(this.app, this));
 
 		this.registerView(HABIT_TRACKER_VIEW_TYPE, (leaf) => new HabitTrackerView(leaf, this));
@@ -5140,7 +5889,7 @@ export default class HabitTrackerPlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor("habit-tracker", (source, el, ctx) => {
 			const filterMatch = source.match(/^\s*habit:\s*(.+)\s*$/m);
 			const filterName = filterMatch ? filterMatch[1].trim() : null;
-			const viewMatch = source.match(/^\s*view:\s*(day|week|month|year|yeardays)\s*$/m);
+			const viewMatch = source.match(/^\s*view:\s*(day|week|month|year|yeardays|streaks|garage)\s*$/m);
 			// Week is the default on every device unless the note explicitly
 			// requests a different view.
 			const defaultView: ViewMode = viewMatch ? (viewMatch[1] as ViewMode) : "week";
@@ -5431,6 +6180,49 @@ export default class HabitTrackerPlugin extends Plugin {
 	// first-match-wins loop in maybeCelebrate() below). Storage order
 	// doesn't matter — settings.milestones itself is left exactly as the
 	// user entered/reordered it in the settings tab.
+	// One-time backfill: an existing tracker arrives with its whole history
+	// already banked, so the garage opens with real credits rather than
+	// asking a long-running user to start from zero. Runs once and records
+	// `seeded`, because after this point `earned` is an append-only ledger
+	// and recounting entries would fight with credits already spent.
+	seedGarageCredits() {
+		const g = this.settings.garage;
+		if (g.seeded) return;
+		let total = 0;
+		for (const id of Object.keys(this.data.entries)) {
+			total += Object.keys(this.data.entries[id] || {}).filter((d) => this.data.entries[id][d]).length;
+		}
+		g.earned = Math.max(g.earned, total);
+		g.seeded = true;
+	}
+
+	// Brief "+1 credit" pill at the top of every open tracker block. Not an
+	// Obsidian Notice on purpose: this fires on every single check-off, and
+	// a system toast at that frequency would be noise stacked over the rest
+	// of the UI. Lives inside the block so it reads as part of the tracker.
+	flashCredit() {
+		document.querySelectorAll<HTMLElement>(".habit-tracker-root").forEach((root) => {
+			root.querySelectorAll(".habit-tracker-credit-toast").forEach((n) => n.remove());
+			const toast = root.createDiv({
+				cls: "habit-tracker-credit-toast",
+				text: copyText(this.settings.designCopy, "gar.credit"),
+			});
+			// Removed on animation end rather than a bare timeout so a
+			// reduced-motion user (where the animation is disabled) still
+			// gets it cleaned up by the fallback timer below.
+			window.setTimeout(() => toast.remove(), 1400);
+		});
+	}
+
+	// Spend guard. Every purchase path funnels through here so the balance
+	// check and the ledger write can never drift apart.
+	garageSpend(amount: number): boolean {
+		const g = this.settings.garage;
+		if (garageBalance(g) < amount) return false;
+		g.spent += amount;
+		return true;
+	}
+
 	sortedMilestones(): number[] {
 		return [...this.settings.milestones].sort((a, b) => a - b);
 	}

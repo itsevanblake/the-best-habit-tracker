@@ -3515,3 +3515,559 @@ body.is-mobile .habit-tracker-week-cell.habit-tracker-day-cell {
 	   nudged down so the label's baseline still governs the row. */
 	font-size: 0.92em;
 }
+
+/* ================================================================
+   Garage — credit economy + car collection
+   ================================================================ */
+
+/* "+1 credit" pill. Deliberately inside .habit-tracker-root rather than an
+   Obsidian Notice: this fires on every single check-off, and a system toast
+   at that frequency reads as noise stacked over the workspace. Positioned
+   against the block so it feels like the tracker reacting to you. */
+.habit-tracker-credit-toast {
+	position: absolute;
+	top: 8px;
+	left: 50%;
+	z-index: 80;
+	transform: translateX(-50%);
+	padding: 5px 14px;
+	border-radius: var(--ht-radius-pill);
+	background: linear-gradient(135deg, var(--htx-gold), var(--htx-gold-bright));
+	color: #2a1a00;
+	font-family: var(--htx-font-display);
+	font-size: 0.82em;
+	font-weight: 700;
+	letter-spacing: var(--htx-tracking);
+	box-shadow: 0 0 20px color-mix(in srgb, var(--htx-gold) 60%, transparent);
+	pointer-events: none;
+	animation: habit-tracker-credit-pop 1.4s ease-out forwards;
+}
+
+@keyframes habit-tracker-credit-pop {
+	0% { opacity: 0; transform: translate(-50%, 6px) scale(0.92); }
+	14% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+	72% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+	100% { opacity: 0; transform: translate(-50%, -10px) scale(0.98); }
+}
+
+.habit-tracker-garage {
+	display: flex;
+	flex-direction: column;
+	gap: var(--ht-space-4);
+	padding: var(--ht-space-2) 0;
+}
+
+/* --- header: balance + rank --- */
+.habit-tracker-garage-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: var(--ht-space-4);
+	padding: var(--htx-card-pad);
+	border-radius: var(--ht-radius-xl);
+	background-color: var(--htx-card);
+	border: var(--htx-hairline) solid var(--htx-card-border);
+}
+
+.habit-tracker-garage-balance {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.habit-tracker-garage-key { font-size: 1.2em; }
+
+.habit-tracker-garage-balance-value {
+	font-family: var(--htx-font-display);
+	font-size: 2.4em;
+	font-weight: var(--htx-num-weight);
+	color: var(--htx-gold-bright);
+	line-height: 1;
+}
+
+.habit-tracker-garage-balance-label {
+	font-size: 0.82em;
+	color: var(--htx-text-muted);
+	text-transform: uppercase;
+	letter-spacing: var(--htx-tracking);
+}
+
+.habit-tracker-garage-rank {
+	flex: 1;
+	min-width: 200px;
+	max-width: 340px;
+}
+
+.habit-tracker-garage-rank-name {
+	font-family: var(--htx-font-display);
+	font-size: 0.95em;
+	font-weight: 700;
+	color: var(--htx-text);
+	margin-bottom: 5px;
+}
+
+.habit-tracker-garage-rank-track,
+.habit-tracker-garage-lock-track,
+.habit-tracker-garage-progress-track {
+	height: 6px;
+	border-radius: var(--ht-radius-pill);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 14%, var(--htx-bg));
+	overflow: hidden;
+}
+
+/* Filled via transform: scaleX() rather than width, so the bar animates on
+   the compositor instead of triggering layout on every frame. The element is
+   always full width; JS sets --fill (0-1) and the transform scales it from
+   the left edge. */
+.habit-tracker-garage-rank-fill,
+.habit-tracker-garage-lock-fill,
+.habit-tracker-garage-progress-fill {
+	width: 100%;
+	height: 100%;
+	transform-origin: left center;
+	transform: scaleX(var(--fill, 0));
+	border-radius: var(--ht-radius-pill);
+	background: linear-gradient(90deg, var(--htx-glow-violet), var(--htx-gold));
+	box-shadow: 0 0 12px color-mix(in srgb, var(--htx-glow-violet) 55%, transparent);
+	transition: transform 0.4s ease;
+}
+
+.habit-tracker-garage-rank-meta,
+.habit-tracker-garage-lock-meta {
+	margin-top: 5px;
+	font-size: 0.74em;
+	color: var(--htx-text-faint);
+}
+
+/* --- car selector --- */
+.habit-tracker-garage-cars {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: var(--ht-space-2);
+}
+
+.habit-tracker-garage-cartab {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	padding: 10px 12px;
+	border-radius: var(--ht-radius-lg);
+	border: var(--htx-hairline) solid var(--htx-card-border);
+	background-color: var(--htx-card);
+	cursor: pointer;
+	transition: border-color var(--htx-dur-fast) ease, background-color var(--htx-dur-fast) ease;
+}
+
+.habit-tracker-garage-cartab:hover { border-color: var(--htx-glow-violet-bright); }
+
+.habit-tracker-garage-cartab:focus-visible {
+	outline: 2px solid var(--htx-glow-violet-bright);
+	outline-offset: 2px;
+}
+
+.habit-tracker-garage-cartab-active {
+	border-color: var(--htx-glow-violet);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 16%, var(--htx-card));
+	box-shadow: 0 0 16px color-mix(in srgb, var(--htx-glow-violet) 28%, transparent);
+}
+
+.habit-tracker-garage-cartab-locked { opacity: 0.72; }
+
+.habit-tracker-garage-cartab-lock {
+	position: absolute;
+	top: 8px;
+	right: 10px;
+	font-size: 0.72em;
+}
+
+.habit-tracker-garage-cartab-brand {
+	font-size: 0.68em;
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	color: var(--htx-text-faint);
+}
+
+.habit-tracker-garage-cartab-name {
+	font-family: var(--htx-font-display);
+	font-size: 1.05em;
+	font-weight: 700;
+	color: var(--htx-text);
+}
+
+.habit-tracker-garage-cartab-price {
+	font-size: 0.72em;
+	color: var(--htx-gold);
+}
+
+.habit-tracker-garage-cartab-price::after {
+	content: " cr";
+	color: var(--htx-text-faint);
+}
+
+/* --- the car stage --- */
+.habit-tracker-garage-stage {
+	position: relative;
+	padding: var(--ht-space-3) var(--ht-space-2) 0;
+	border-radius: var(--ht-radius-xl);
+	background:
+		radial-gradient(ellipse 70% 60% at 50% 78%, color-mix(in srgb, var(--htx-glow-violet) 18%, transparent), transparent 70%),
+		linear-gradient(180deg, var(--htx-bg-2), var(--htx-card));
+	border: var(--htx-hairline) solid var(--htx-card-border);
+	overflow: hidden;
+}
+
+/* Capped rather than full-bleed: the viewBox is 620x250, so on a wide pane
+   an unconstrained width scales the car to ~640px tall and pushes the shop
+   (the part you actually interact with) below the fold. */
+.habit-tracker-car-svg {
+	display: block;
+	width: 100%;
+	max-width: 720px;
+	height: auto;
+	margin: 0 auto;
+}
+
+/* Specular sweep across the paint. Slow and subtle — it should read as
+   light moving over a curved panel, not as a UI animation demanding
+   attention. */
+.habit-tracker-car-spec {
+	animation: habit-tracker-car-sheen 7s ease-in-out infinite;
+	transform-origin: center;
+}
+
+@keyframes habit-tracker-car-sheen {
+	0%, 100% { opacity: 0.55; transform: translateX(-4%); }
+	50% { opacity: 1; transform: translateX(4%); }
+}
+
+.habit-tracker-car-glow { filter: blur(6px); }
+
+.habit-tracker-car-glow-pulse {
+	animation: habit-tracker-car-underglow 2.4s ease-in-out infinite;
+}
+
+@keyframes habit-tracker-car-underglow {
+	0%, 100% { opacity: 0.55; }
+	50% { opacity: 1; }
+}
+
+.habit-tracker-garage-stage-locked .habit-tracker-car-svg { filter: grayscale(0.75) brightness(0.7); }
+
+.habit-tracker-garage-plate {
+	text-align: center;
+	margin-top: -4px;
+}
+
+.habit-tracker-garage-plate-name {
+	font-family: var(--htx-font-display);
+	font-size: 1.5em;
+	font-weight: 700;
+	letter-spacing: var(--htx-tracking);
+	color: var(--htx-text);
+}
+
+.habit-tracker-garage-plate-blurb {
+	font-size: 0.82em;
+	color: var(--htx-text-muted);
+	margin-top: 2px;
+}
+
+/* --- locked state --- */
+.habit-tracker-garage-lock {
+	padding: var(--htx-card-pad);
+	border-radius: var(--ht-radius-xl);
+	background-color: var(--htx-card);
+	border: var(--htx-hairline) dashed color-mix(in srgb, var(--htx-gold) 45%, transparent);
+	text-align: center;
+}
+
+.habit-tracker-garage-buy-big {
+	width: 100%;
+	margin-top: var(--ht-space-3);
+	padding: 10px !important;
+	font-size: 0.95em !important;
+}
+
+/* --- build progress --- */
+.habit-tracker-garage-progress {
+	display: flex;
+	align-items: center;
+	gap: var(--ht-space-3);
+}
+
+.habit-tracker-garage-progress-label {
+	flex-shrink: 0;
+	font-size: 0.78em;
+	color: var(--htx-text-muted);
+}
+
+.habit-tracker-garage-progress-track { flex: 1; }
+
+/* --- shop --- */
+.habit-tracker-garage-shop {
+	display: flex;
+	flex-direction: column;
+	gap: var(--ht-space-2);
+}
+
+.habit-tracker-garage-slot {
+	padding: var(--ht-space-3) var(--htx-card-pad);
+	border-radius: var(--ht-radius-lg);
+	background-color: var(--htx-card);
+	border: var(--htx-hairline) solid var(--htx-card-border);
+}
+
+.habit-tracker-garage-slot-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	margin-bottom: 9px;
+}
+
+.habit-tracker-garage-slot-icon {
+	font-size: 1.05em;
+	color: var(--htx-glow-violet-bright);
+	line-height: 1.2;
+}
+
+.habit-tracker-garage-slot-label {
+	font-family: var(--htx-font-display);
+	font-weight: 700;
+	color: var(--htx-text);
+	letter-spacing: var(--htx-tracking);
+}
+
+.habit-tracker-garage-slot-desc {
+	font-size: 0.75em;
+	color: var(--htx-text-faint);
+}
+
+.habit-tracker-garage-rungs {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+	gap: 6px;
+}
+
+.habit-tracker-garage-rung {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 7px 10px;
+	border-radius: var(--ht-radius-md);
+	border: var(--htx-hairline) solid color-mix(in srgb, var(--htx-glow-violet) 22%, transparent);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 6%, var(--htx-bg-2));
+	font-size: 0.78em;
+	transition: border-color var(--htx-dur-fast) ease, background-color var(--htx-dur-fast) ease;
+}
+
+.habit-tracker-garage-rung-owned { cursor: pointer; }
+.habit-tracker-garage-rung-owned:hover { border-color: var(--htx-glow-violet-bright); }
+
+.habit-tracker-garage-rung-owned:focus-visible {
+	outline: 2px solid var(--htx-glow-violet-bright);
+	outline-offset: 2px;
+}
+
+/* The equipped rung is the one currently on the car — gold, matching the
+   streak/reward language used everywhere else in the plugin. */
+.habit-tracker-garage-rung-on {
+	border-color: var(--htx-gold);
+	background-color: color-mix(in srgb, var(--htx-gold) 14%, var(--htx-bg-2));
+	box-shadow: 0 0 12px color-mix(in srgb, var(--htx-gold) 26%, transparent);
+}
+
+/* Rungs beyond the next purchasable one: visible so the whole ladder is
+   legible, dimmed so it's obvious they aren't reachable yet. */
+.habit-tracker-garage-rung-far { opacity: 0.42; }
+
+.habit-tracker-garage-rung-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--htx-text);
+}
+
+.habit-tracker-garage-rung-on .habit-tracker-garage-rung-name { color: var(--htx-gold-bright); }
+
+.habit-tracker-garage-rung-tag {
+	flex-shrink: 0;
+	font-size: 0.88em;
+	color: var(--htx-text-faint);
+}
+
+.habit-tracker-garage-rung-on .habit-tracker-garage-rung-tag {
+	color: var(--htx-gold);
+	font-weight: 700;
+}
+
+.habit-tracker-garage-rung-price {
+	flex-shrink: 0;
+	color: var(--htx-gold);
+	font-weight: 700;
+}
+
+.habit-tracker-garage-rung-price::after {
+	content: " cr";
+	color: var(--htx-text-faint);
+	font-weight: 400;
+}
+
+.habit-tracker-garage-buy {
+	flex-shrink: 0;
+	padding: 3px 10px !important;
+	font-size: 0.92em !important;
+	font-weight: 700 !important;
+	border-radius: var(--ht-radius-pill) !important;
+	background: linear-gradient(135deg, var(--htx-gold), var(--htx-gold-bright)) !important;
+	border: none !important;
+	color: #2a1a00 !important;
+	cursor: pointer;
+	box-shadow: none !important;
+}
+
+.habit-tracker-garage-buy:disabled {
+	background: var(--htx-bg-2) !important;
+	color: var(--htx-text-faint) !important;
+	cursor: not-allowed;
+}
+
+@media (max-width: 620px) {
+	.habit-tracker-garage-header { gap: var(--ht-space-2); }
+	.habit-tracker-garage-rungs { grid-template-columns: 1fr 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.habit-tracker-car-spec,
+	.habit-tracker-car-glow-pulse,
+	.habit-tracker-credit-toast {
+		animation: none !important;
+	}
+}
+
+/* ---- Votes summary (Streaks view) ---------------------------------------
+   A whole-vault leaderboard above the per-habit rows: total votes cast,
+   a proportional bar of each habit's share, then the same habits ranked
+   strongest-first. Deliberately its own card look (not the per-habit
+   --habit-color-bordered style) since it belongs to the page, not to one
+   habit. */
+
+.habit-tracker-votes-summary {
+	padding: var(--htx-card-pad, 14px);
+	margin-bottom: 4px;
+	border-radius: var(--ht-radius-lg, 10px);
+	border: var(--htx-hairline) solid color-mix(in srgb, var(--htx-glow-violet) 35%, transparent);
+	background: linear-gradient(180deg, color-mix(in srgb, var(--htx-glow-violet) 8%, transparent), transparent 70%);
+}
+
+.habit-tracker-votes-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.habit-tracker-votes-title {
+	font-size: 0.72em;
+	font-weight: 700;
+	letter-spacing: var(--htx-tracking);
+	text-transform: uppercase;
+	color: color-mix(in srgb, var(--htx-text) 55%, transparent);
+}
+
+.habit-tracker-votes-number {
+	font-size: 2.4em;
+	font-weight: 800;
+	line-height: 1.05;
+	color: var(--htx-text);
+	font-variant-numeric: tabular-nums;
+	margin: 2px 0 4px;
+}
+
+.habit-tracker-votes-sentence {
+	font-size: 0.85em;
+	color: color-mix(in srgb, var(--htx-text) 78%, transparent);
+	margin-bottom: 12px;
+}
+
+.habit-tracker-votes-sentence-mark {
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, var(--htx-gold) 70%, transparent);
+	text-underline-offset: 2px;
+	color: var(--htx-text);
+	font-weight: 600;
+}
+
+/* flex-grow per segment == that habit's vote count, flex-basis 0 — widths
+   land exactly on real ratios with no percentage rounding to fight. */
+.habit-tracker-votes-bar {
+	display: flex;
+	height: 40px;
+	border-radius: var(--ht-radius-md);
+	overflow: hidden;
+	margin-bottom: 12px;
+}
+
+.habit-tracker-votes-bar-seg {
+	flex-shrink: 0;
+	flex-basis: 0;
+	display: flex;
+	align-items: flex-end;
+	justify-content: flex-end;
+	padding: 0 6px 4px 0;
+	min-width: 2px;
+}
+
+.habit-tracker-votes-bar-seg-label {
+	font-size: 0.78em;
+	font-weight: 700;
+	color: #ffffff;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Set only after real layout — see renderVotesSummary's requestAnimationFrame
+   pass — once a segment is confirmed too narrow for its own number. */
+.habit-tracker-votes-bar-seg-label-hidden {
+	display: none;
+}
+
+.habit-tracker-votes-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.habit-tracker-votes-list-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 12px;
+	border-radius: var(--ht-radius-md);
+	background-color: color-mix(in srgb, var(--htx-glow-violet) 7%, var(--htx-bg-2));
+}
+
+.habit-tracker-votes-list-dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.habit-tracker-votes-list-name {
+	flex: 1;
+	font-size: 0.85em;
+	color: var(--htx-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.habit-tracker-votes-list-count {
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--htx-text);
+	flex-shrink: 0;
+}
