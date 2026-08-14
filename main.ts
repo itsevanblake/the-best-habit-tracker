@@ -202,10 +202,10 @@ interface GarageCar {
 const GARAGE_CARS: GarageCar[] = [
 	{
 		id: "mclaren",
-		name: "720S",
+		name: "P1",
 		brand: "McLaren",
 		price: 150,
-		blurb: "Mid-engine, dihedral doors, obsessive aero.",
+		blurb: "Hybrid V8. Dihedral doors. Obsessive aero.",
 		body:
 			"M36,168 C34,148 40,134 58,126 L120,110 C142,102 170,96 206,92 C244,76 292,68 338,70 C382,72 414,84 436,102 L470,118 C520,126 562,140 582,158 C590,166 592,174 590,181 C590,185 586,187 580,187 L522,187 A54,54 0 0 0 414,187 L206,187 A54,54 0 0 0 98,187 L48,187 C40,187 36,180 36,168 Z",
 		glass: "M268,94 C300,78 332,74 358,78 C384,84 406,96 424,112 L340,106 L290,100 Z",
@@ -220,10 +220,10 @@ const GARAGE_CARS: GarageCar[] = [
 	},
 	{
 		id: "lamborghini",
-		name: "Huracán",
+		name: "Aventador SVJ",
 		brand: "Lamborghini",
 		price: 500,
-		blurb: "Wedge geometry, naturally aspirated V10 howl.",
+		blurb: "Naturally aspirated V12. Roadster. No filter.",
 		// Sharper, flatter wedge — the Lamborghini signature. Lower roof,
 		// straighter lines, more aggressive tail.
 		body:
@@ -240,7 +240,7 @@ const GARAGE_CARS: GarageCar[] = [
 	},
 	{
 		id: "bugatti",
-		name: "Chiron",
+		name: "Chiron Pur Sport",
 		brand: "Bugatti",
 		price: 1400,
 		blurb: "Quad-turbo W16. Engineering with no upper limit.",
@@ -4656,7 +4656,25 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 
 		// --- the car itself
 		const stage = page.createDiv({ cls: "habit-tracker-garage-stage" + (unlocked ? "" : " habit-tracker-garage-stage-locked") });
-		stage.innerHTML = this.carSvg(car, g, { locked: !unlocked });
+		// Real car photo when one is present, hand-authored SVG otherwise.
+		// The photo can't reflect equipped upgrades (a flat image has no
+		// separable parts) — that's a known, accepted tradeoff until a 3D
+		// renderer replaces it, so the shop stays the source of truth for
+		// what you own and the image is purely the hero.
+		const photo = this.plugin.carImagePath(car.id);
+		if (photo) {
+			const img = stage.createEl("img", { cls: "habit-tracker-car-photo" });
+			img.src = photo;
+			img.alt = `${car.brand} ${car.name}`;
+			// If the file is missing or unreadable, fall back to the vector
+			// car rather than leaving an empty stage.
+			img.onerror = () => {
+				img.remove();
+				stage.innerHTML = this.carSvg(car, g, { locked: !unlocked });
+			};
+		} else {
+			stage.innerHTML = this.carSvg(car, g, { locked: !unlocked });
+		}
 
 		const plate = page.createDiv({ cls: "habit-tracker-garage-plate" });
 		plate.createDiv({ text: `${car.brand} ${car.name}`, cls: "habit-tracker-garage-plate-name" });
@@ -4912,6 +4930,8 @@ class HabitTrackerBlock extends MarkdownRenderChild {
 				stat("current", `${stats.streak}`, `Counted in ${unit}.`, streakIcon);
 				stat("best", `${stats.bestStreak}`, `Longest run ever, counted in ${unit}.`, copyText(cd, "stat.bestIcon"));
 				stat("completions", `${stats.total}`, undefined, copyText(cd, "streaks.completionsIcon"));
+				stat("this month", `${stats.totalThisMonth}`, `${unit === "days" ? "Days" : "Sessions"} completed this calendar month.`);
+				stat("this year", `${stats.totalThisYear}`, `${unit === "days" ? "Days" : "Sessions"} completed this calendar year.`);
 				stat(
 					"consistency",
 					`${con.rate}%`,
@@ -6195,6 +6215,25 @@ export default class HabitTrackerPlugin extends Plugin {
 		g.earned = Math.max(g.earned, total);
 		g.seeded = true;
 	}
+
+	// Resource URL for a car's photo, or null when none is bundled. Cars
+	// live beside the plugin's own files, so the path is derived from the
+	// plugin's manifest dir rather than hardcoded — that keeps working if
+	// the vault or plugin folder is ever renamed.
+	carImagePath(carId: string): string | null {
+		const dir = this.manifest.dir;
+		if (!dir) return null;
+		const rel = `${dir}/cars/${carId}.webp`;
+		if (!this.carImageCache.has(rel)) {
+			// existsSync equivalent for the vault adapter is async, so this
+			// optimistically returns a path and relies on the <img> onerror
+			// fallback above; the cache just avoids rebuilding the string.
+			this.carImageCache.set(rel, this.app.vault.adapter.getResourcePath(rel));
+		}
+		return this.carImageCache.get(rel) ?? null;
+	}
+
+	private carImageCache: Map<string, string> = new Map();
 
 	// Brief "+1 credit" pill at the top of every open tracker block. Not an
 	// Obsidian Notice on purpose: this fires on every single check-off, and
